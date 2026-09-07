@@ -1,7 +1,7 @@
 {
   "id": "deki-nodegraph",
   "displayName": "Node Graph",
-  "minEngine": "0.10.0",
+  "minEngine": "0.11.0",
   "buildDefine": "DEKI_PACKAGE_NODEGRAPH",
   "requires": [],
   "features": []
