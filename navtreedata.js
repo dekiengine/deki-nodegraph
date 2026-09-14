@@ -24,7 +24,12 @@
 */
 var NAVTREE =
 [
-  [ "deki-nodegraph", "index.html", ]
+  [ "deki-nodegraph", "index.html", [
+    [ "Changelog", "index.html#autotoc_md0", [
+      [ "0.15.0", "index.html#autotoc_md1", null ],
+      [ "Added", "index.html#autotoc_md2", null ]
+    ] ]
+  ] ]
 ];
 
 var NAVTREEINDEX =
