@@ -50,7 +50,7 @@ DEKI_NODEGRAPH_API int DekiNodeGraph_EnsureRegistered(void)
 #endif
 }
 
-DEKI_PLUGIN_API const char* DekiPlugin_GetName(void) { return "DekiRendering::Deki Node Graph Package"; }
+DEKI_PLUGIN_API const char* DekiPlugin_GetName(void) { return "Deki Node Graph Package"; }
 
 DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
 {
