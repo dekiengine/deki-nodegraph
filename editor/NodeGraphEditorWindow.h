@@ -14,8 +14,7 @@
 #include <string>
 #include <vector>
 
-struct DekiNodeMeta;
-
+namespace DekiNodeGraph { struct DekiNodeMeta; }
 namespace DekiEditor
 {
 
@@ -121,7 +120,7 @@ private:
     // the activate/deactivate capture pattern; `selfNodeId` excludes the owning
     // node from NodeRef dropdowns.
     using CommitFn = std::function<void(const nlohmann::json&, const nlohmann::json&)>;
-    void DrawPropertyControl(void* instance, const DekiNodeMeta& meta,
+    void DrawPropertyControl(void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
                              const Deki::PropertyInfo& p, const std::string& editKey,
                              uint32_t selfNodeId, const CommitFn& commit);
     // Chevron button + popup listing the open scene's objects, optionally
@@ -143,7 +142,7 @@ private:
     // numbers, checkbox for bool, dropdown for enums) and stored as canonical
     // text. Falls back to a plain text field while nothing is picked yet.
     void DrawTypedLiteralControl(const Deki::PropertyInfo& p, void* instance,
-                                 const DekiNodeMeta& meta, const std::string& editKey,
+                                 const DekiNodeGraph::DekiNodeMeta& meta, const std::string& editKey,
                                  const CommitFn& commit);
     void DrawPropertyWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
     void DrawWeightsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);

@@ -31,9 +31,8 @@
 #include <string>
 #include <vector>
 
-struct DekiNodeMeta;
-struct DekiNodeGraphDomain;
-
+namespace DekiNodeGraph { struct DekiNodeMeta; }
+namespace DekiNodeGraph { struct DekiNodeGraphDomain; }
 namespace DekiEditor
 {
 
@@ -43,7 +42,7 @@ namespace DekiEditor
 // parent's inspector panel and serialized inside the parent's graph entry.
 struct NodeGraphDocChild
 {
-    const DekiNodeMeta* meta = nullptr;
+    const DekiNodeGraph::DekiNodeMeta* meta = nullptr;
     void* instance = nullptr;    // meta->createFunc(); owned by the document
     bool enabled = true;
 };
@@ -53,7 +52,7 @@ struct NodeGraphDocGraph;
 struct NodeGraphDocNode
 {
     uint32_t id = 0;
-    const DekiNodeMeta* meta = nullptr;
+    const DekiNodeGraph::DekiNodeMeta* meta = nullptr;
     void* instance = nullptr;    // meta->createFunc(); owned by the document
     float x = 0.0f, y = 0.0f;    // canvas layout (graph units)
     std::vector<NodeGraphDocChild> children;   // ordered child stack (may be empty)
@@ -91,7 +90,7 @@ public:
 
     std::string assetPath;
     std::string cachePath;
-    const DekiNodeGraphDomain* domain = nullptr;
+    const DekiNodeGraph::DekiNodeGraphDomain* domain = nullptr;
 
     NodeGraphDocGraph root;
     uint32_t nextNodeId = 1;   // document-wide: ids are unique across all levels

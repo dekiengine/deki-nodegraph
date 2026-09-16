@@ -1,6 +1,13 @@
 #pragma once
 
 #ifdef DEKI_EDITOR
+#include <cstdint>
+#endif
+
+namespace DekiNodeGraph
+{
+
+#ifdef DEKI_EDITOR
 
 /**
  * @file NodeGraphPreview.h
@@ -23,7 +30,6 @@
  * screen pixels and the window has already clipped to the preview rect.
  */
 
-#include <cstdint>
 
 struct NodeGraphPreviewNode
 {
@@ -141,3 +147,5 @@ struct NodeGraphPreviewOps
 };
 
 #endif // DEKI_EDITOR
+
+}  // namespace DekiNodeGraph

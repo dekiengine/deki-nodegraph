@@ -7,6 +7,9 @@
 
 #include <string>
 
+namespace DekiNodeGraph
+{
+
 using Deki::SceneFormat::SceneMsgPackParser;
 using SceneFormat::NodeFactory;
 
@@ -370,3 +373,5 @@ const NodeGraphData::NodeInstance* NodeGraphData::Graph::Next(uint32_t nodeId, i
     }
     return nullptr;
 }
+
+}  // namespace DekiNodeGraph

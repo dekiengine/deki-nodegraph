@@ -1,6 +1,18 @@
 #pragma once
 
 #ifdef DEKI_EDITOR
+#include <cstdint>
+#include <cstddef>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include "deki-nodegraph/NodeGraphApi.h"
+#endif
+
+namespace DekiNodeGraph
+{
+
+#ifdef DEKI_EDITOR
 
 /**
  * @file NodeTypeRegistry.h
@@ -13,13 +25,7 @@
  * teardown so no stale meta pointers survive FreeLibrary.
  */
 
-#include <cstdint>
-#include <cstddef>
-#include <string>
-#include <vector>
-#include <unordered_map>
 
-#include "deki-nodegraph/NodeGraphApi.h"
 
 struct DekiNodeMeta;  // full definition in deki-nodegraph/DekiNode.h
 
@@ -75,3 +81,5 @@ private:
 };
 
 #endif // DEKI_EDITOR
+
+}  // namespace DekiNodeGraph

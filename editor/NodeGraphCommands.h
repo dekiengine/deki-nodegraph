@@ -26,6 +26,9 @@
 #include <utility>
 #include <vector>
 
+// Editor extensions live in DekiEditor; the package's own types are in DekiNodeGraph.
+using namespace DekiNodeGraph;
+
 namespace DekiEditor
 {
 

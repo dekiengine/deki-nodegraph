@@ -1,6 +1,17 @@
 #pragma once
 
 #ifdef DEKI_EDITOR
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include "deki-nodegraph/NodeGraphApi.h"
+#include "deki-nodegraph/NodeGraphPreview.h"
+#endif
+
+namespace DekiNodeGraph
+{
+
+#ifdef DEKI_EDITOR
 
 /**
  * @file NodeGraphDomainRegistry.h
@@ -16,12 +27,7 @@
  * survive FreeLibrary.
  */
 
-#include <string>
-#include <vector>
-#include <unordered_map>
 
-#include "deki-nodegraph/NodeGraphApi.h"
-#include "deki-nodegraph/NodeGraphPreview.h"
 
 /**
  * @brief One node-graph domain (all strings are static storage in the owning DLL).
@@ -70,3 +76,5 @@ private:
 };
 
 #endif // DEKI_EDITOR
+
+}  // namespace DekiNodeGraph

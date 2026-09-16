@@ -18,6 +18,9 @@
 #include <cstdint>
 #include <vector>
 
+// The package's types moved into its namespace; tests name them unqualified.
+using namespace DekiNodeGraph;
+
 namespace
 {
 

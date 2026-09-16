@@ -49,6 +49,9 @@
 #include <cstddef>
 #include <vector>
 
+namespace DekiNodeGraph
+{
+
 class DEKI_NODEGRAPH_API NodeGraphData {
 public:
     // One child in a node's ordered stack (see DEKI_NODE_CHILDREN). Children
@@ -120,3 +123,5 @@ private:
 
     Graph m_Root;
 };
+
+}  // namespace DekiNodeGraph

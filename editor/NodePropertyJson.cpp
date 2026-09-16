@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 
+// Editor extensions live in DekiEditor; the package's own types are in DekiNodeGraph.
+using namespace DekiNodeGraph;
+
 namespace DekiEditor
 {
 
@@ -77,7 +80,7 @@ namespace
         }
     }
 
-    void LogUnsupported(const DekiNodeMeta& meta, const Deki::PropertyInfo& p)
+    void LogUnsupported(const DekiNodeGraph::DekiNodeMeta& meta, const Deki::PropertyInfo& p)
     {
         DEKI_LOG_ERROR("NodePropertyJson: node type '%s' property '%s' has unsupported "
                        "property type %d for node graphs",
@@ -86,7 +89,7 @@ namespace
     }
 }
 
-bool NodePropertiesToJson(const void* instance, const DekiNodeMeta& meta,
+bool NodePropertiesToJson(const void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
                           nlohmann::json& outValues)
 {
     outValues = json::object();
@@ -168,7 +171,7 @@ bool NodePropertiesToJson(const void* instance, const DekiNodeMeta& meta,
     return true;
 }
 
-bool NodePropertiesFromJson(void* instance, const DekiNodeMeta& meta,
+bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
                             const nlohmann::json& values)
 {
     if (!instance || !values.is_object())

@@ -1,5 +1,6 @@
 #include "deki-nodegraph/NodeFactory.h"
 
+namespace DekiNodeGraph {
 namespace SceneFormat {
 
 NodeFactory& NodeFactory::Instance() {
@@ -7,4 +8,5 @@ NodeFactory& NodeFactory::Instance() {
     return instance;
 }
 
-} // namespace SceneFormat
+}  // namespace SceneFormat
+}  // namespace DekiNodeGraph

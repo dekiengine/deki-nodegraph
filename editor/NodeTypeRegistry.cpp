@@ -7,6 +7,9 @@
 
 #include <cstdio>
 
+// Editor extensions live in DekiEditor; the package's own types are in DekiNodeGraph.
+using namespace DekiNodeGraph;
+
 NodeTypeRegistry& NodeTypeRegistry::Instance() {
     static NodeTypeRegistry instance;
     return instance;

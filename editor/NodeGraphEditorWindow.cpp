@@ -39,6 +39,7 @@
 #include <utility>
 #include <vector>
 
+
 namespace DekiEditor
 {
 
@@ -978,7 +979,7 @@ void NodeGraphEditorWindow::DrawToolbar()
         if (!m_GraphPath.empty())
             NavigateToDepth(m_GraphPath.size() - 1);
     }
-    if (ui.ToolbarIconButton("##ng_frame", ICON_TI_FOCUS_CENTERED, "Frame all nodes"))
+    if (ui.ToolbarIconButton("##ng_frame", ICON_TI_FOCUS_CENTERED, "DekiTiledMap::Frame all nodes"))
         m_Canvas.FocusContent();
 
     DrawBreadcrumb();
@@ -2044,7 +2045,7 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         if (isTransform)
             preview = "Transform";
         else if (isVariable)
-            preview = "Variable";
+            preview = "DekiFsm::Variable";
         else if (meta)
             preview = meta->GetDisplayName();
         else if (!ref->component.empty())
@@ -2080,7 +2081,7 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
             // machine rather than on an object, so the object row above is
             // irrelevant for them.
             if (!CollectGraphVariables().empty() &&
-                ui.Selectable("Variable", isVariable) && !isVariable)
+                ui.Selectable("DekiFsm::Variable", isVariable) && !isVariable)
             {
                 Deki::PropertyRef next = *ref;
                 next.component = Deki::kVariableRefComponent;

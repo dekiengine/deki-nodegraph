@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <cstring>
 
+// Editor extensions live in DekiEditor; the package's own types are in DekiNodeGraph.
+using namespace DekiNodeGraph;
+
 namespace DekiEditor
 {
 
@@ -139,7 +142,7 @@ uint32_t NodeGraphDocument::OwnerOf(uint32_t nodeId) const
 
 uint32_t NodeGraphDocument::AddNode(uint32_t typeId, float x, float y, uint32_t ownerNodeId)
 {
-    const DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeId);
+    const DekiNodeGraph::DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeId);
     if (!meta || !meta->createFunc)
     {
         DEKI_LOG_ERROR("NodeGraphDocument: AddNode with unregistered node type id %u", typeId);
@@ -172,7 +175,7 @@ bool NodeGraphDocument::AddNodeWithId(uint32_t id, const std::string& typeName,
                                       float x, float y, const nlohmann::json& values,
                                       uint32_t ownerNodeId)
 {
-    const DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
+    const DekiNodeGraph::DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
     if (!meta || !meta->createFunc)
     {
         DEKI_LOG_ERROR("NodeGraphDocument: unknown node type '%s'", typeName.c_str());
@@ -312,7 +315,7 @@ bool NodeGraphDocument::EnsureSubgraph(uint32_t nodeId)
     if (!node->inner->nodes.empty())
         return true;                       // already seeded or authored
 
-    const DekiNodeMeta* entryMeta = NodeTypeRegistry::Instance().GetMeta(std::string(entryType));
+    const DekiNodeGraph::DekiNodeMeta* entryMeta = NodeTypeRegistry::Instance().GetMeta(std::string(entryType));
     if (!entryMeta)
     {
         DEKI_LOG_ERROR("NodeGraphDocument: node type '%s' declares subgraph entry '%s', "
@@ -411,7 +414,7 @@ int NodeGraphDocument::AddChild(uint32_t nodeId, uint32_t childTypeId, int index
         DEKI_LOG_ERROR("NodeGraphDocument: AddChild on unknown node %u", nodeId);
         return -1;
     }
-    const DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(childTypeId);
+    const DekiNodeGraph::DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(childTypeId);
     if (!meta || !meta->createFunc)
     {
         DEKI_LOG_ERROR("NodeGraphDocument: AddChild with unregistered child type id %u", childTypeId);
@@ -439,7 +442,7 @@ bool NodeGraphDocument::AddChildFromJson(uint32_t nodeId, int index, const std::
         DEKI_LOG_ERROR("NodeGraphDocument: AddChildFromJson on unknown node %u", nodeId);
         return false;
     }
-    const DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
+    const DekiNodeGraph::DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
     if (!meta || !meta->createFunc)
     {
         DEKI_LOG_ERROR("NodeGraphDocument: unknown child type '%s'", typeName.c_str());
@@ -590,7 +593,7 @@ int NodeGraphDocument::OutputPinCount(const NodeGraphDocNode& node) const
 {
     if (!node.meta)
         return 0;
-    const DekiNodeMeta& meta = *node.meta;
+    const DekiNodeGraph::DekiNodeMeta& meta = *node.meta;
     if (!meta.dynamicOutputsProperty)
         return meta.outputPinCount;
 

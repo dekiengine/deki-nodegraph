@@ -22,6 +22,9 @@
 
 namespace Deki::SceneFormat { class SceneMsgPackParser; }
 
+namespace DekiNodeGraph
+{
+
 namespace SceneFormat {
 
 
@@ -80,3 +83,5 @@ private:
 };
 
 } // namespace SceneFormat
+
+}  // namespace DekiNodeGraph
