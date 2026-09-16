@@ -108,3 +108,18 @@ The window is built entirely from `EditorUI` and `EditorTheme` (both live in
 the editor's shared `CommandHistory` so node-graph undo interleaves with the
 rest of the editor. It survives hot reload through
 `EditorWindow::SaveSession` / `RestoreSession`.
+
+## Namespace
+
+This package's types live in `DekiNodeGraph`. Scene files store the qualified
+name, so a component is `DekiNodeGraph::SomeComponent` there, and code naming one
+needs the namespace:
+
+```cpp
+using namespace DekiNodeGraph;
+obj->AddComponent<SomeComponent>();
+```
+
+Scenes saved before 0.16.0 used bare names and still load: every component
+records what it used to be called, and a save writes the current name.
+
