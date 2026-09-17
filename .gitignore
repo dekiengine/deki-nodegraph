@@ -1,2 +1,19 @@
 generated/
 .deki-package.json
+
+# Build and editor leftovers, matching the other packages.
+build/
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.pdb
+*.tmp
+*.log
+.vs/
+.vscode/
+.claude/
+.cache/
+CMakeFiles/
+cmake-build-*/
