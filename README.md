@@ -20,12 +20,17 @@ metadata, and the self-registration that puts it in the registries at DLL load
 ```cpp
 #include "deki-nodegraph/DekiNode.h"
 
-DEKI_NODE("MyGraph/Flow")           // category: "<DomainKey>/<MenuGroup>"
-struct MyWaitNode {
-    DEKI_NODE_NAME("MyWait")
+struct MyWaitNode
+{
+    // (class, saved node name, category as "<DomainKey>/<MenuGroup>").
+    // The macro opens a public section, so it goes inside the struct.
+    DEKI_NODE(MyWaitNode, "MyWait", "MyGraph/Flow")
     DEKI_NODE_OUTPUTS("Done")
     DEKI_EXPORT float seconds = 1.0f;
 };
+
+// At the bottom of the header, once per node type.
+#include "generated/MyWaitNode.gen.h"
 ```
 
 A **domain** ties an `.asset` type to the node categories that may appear in
