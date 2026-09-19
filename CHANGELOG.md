@@ -8,6 +8,19 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Added
+- **Graphs can be authored from the command line** (`--tool` / `--script` /
+  MCP), through the same document model and validation as the Node Graph
+  window: `graph_add_node` (optionally choosing the node's id and its seeded
+  entry's id, so a script can wire what it has just added), `graph_connect`
+  (pins by index or label, a state's transitions included), `graph_set_values`,
+  `graph_add_child` (e.g. a variable), `graph_get`. Enum fields take their
+  names. The canvas rules the window's menus enforce are enforced here.
+- `graph_view`: point the open Node Graph window at a canvas and select a
+  node - for a screenshot, or to show someone where to look.
+
 ## 0.16.0
 
 ### Changed

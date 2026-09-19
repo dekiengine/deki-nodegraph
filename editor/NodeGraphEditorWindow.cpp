@@ -743,9 +743,68 @@ void NodeGraphEditorWindow::CloseDocument()
     m_GraphPath.clear();
 }
 
+namespace
+{
+NodeGraphEditorWindow* s_LiveWindow = nullptr;
+}
+
+NodeGraphEditorWindow::NodeGraphEditorWindow()
+{
+    s_LiveWindow = this;
+}
+
 NodeGraphEditorWindow::~NodeGraphEditorWindow()
 {
+    if (s_LiveWindow == this)
+        s_LiveWindow = nullptr;
     DestroyPreview();
+}
+
+NodeGraphEditorWindow* NodeGraphEditorWindow::Live()
+{
+    return s_LiveWindow;
+}
+
+std::string NodeGraphEditorWindow::OpenAssetPath() const
+{
+    return m_Doc ? m_Doc->assetPath : std::string();
+}
+
+bool NodeGraphEditorWindow::ShowCanvas(uint32_t canvasOwner, uint32_t node, std::string& error)
+{
+    if (!m_Doc)
+    {
+        error = "the Node Graph window has no graph open";
+        return false;
+    }
+    // The owners from the root down to `canvasOwner`.
+    std::vector<uint32_t> path;
+    for (uint32_t id = canvasOwner; id != 0; id = m_Doc->OwnerOf(id))
+    {
+        const NodeGraphDocNode* owner = m_Doc->FindNode(id);
+        if (!owner || !owner->meta || !owner->meta->subgraphCategory)
+        {
+            error = "node " + std::to_string(id) + " does not exist or has no inside to show";
+            return false;
+        }
+        path.insert(path.begin(), id);
+    }
+    NavigateToDepth(0);
+    for (uint32_t id : path)
+        EnterSubgraph(id);
+    if (node != 0)
+    {
+        const NodeGraphDocGraph& graph = OpenGraph();
+        const bool here = std::any_of(graph.nodes.begin(), graph.nodes.end(),
+                                      [node](const NodeGraphDocNode& n) { return n.id == node; });
+        if (!here)
+        {
+            error = "node " + std::to_string(node) + " is not on that canvas";
+            return false;
+        }
+        m_SelectedNode = node;
+    }
+    return true;
 }
 
 void NodeGraphEditorWindow::DestroyPreview()

@@ -37,7 +37,19 @@ public:
     const char* GetTitle() override { return "Node Graph"; }
     const char* GetMenuPath() override { return "Tools/Node Graph"; }
 
+    NodeGraphEditorWindow();
     ~NodeGraphEditorWindow() override;
+
+    // ---- For the command line (graph_view in NodeGraphCliTools.cpp) ----
+    // The window instance, or null when none exists (created by the tool host,
+    // destroyed on hot reload).
+    static NodeGraphEditorWindow* Live();
+    // The open graph asset's path, or "" when none is open.
+    std::string OpenAssetPath() const;
+    // Put the graph owned by `canvasOwner` (0 = the root) on the canvas, going
+    // in through every node above it, and select `node` (0 = nothing) - what
+    // double-clicking down to it and clicking it would do.
+    bool ShowCanvas(uint32_t canvasOwner, uint32_t node, std::string& error);
 
     void OnGUI() override;
 
