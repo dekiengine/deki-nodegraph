@@ -1,11 +1,11 @@
 # deki-nodegraph
 
-Documentation: https://dekiengine.github.io/deki-nodegraph/ (components and properties, generated from the code)
+Docs: https://dekiengine.github.io/deki-nodegraph/ (components and properties, generated from the code)
 
-The node-graph feature for Deki Engine: the runtime container that loads a
-compiled graph asset, and the editor that authors one. Nothing in here knows
-about any particular graph — a consuming package declares its own node types and
-its own graph domain, and this package draws and runs them.
+The node-graph feature for Deki Engine: the runtime that loads a compiled
+graph asset, and the editor that authors one. It knows nothing about any
+particular graph. A package declares its own node types and its own domain,
+and this package draws and runs them.
 
 `deki-fsm` is the first consumer; a project can add node types of its own the
 same way.
@@ -14,8 +14,8 @@ same way.
 
 A node type is a plain reflected struct marked `DEKI_NODE` with `DEKI_EXPORT`
 fields. The reflection codegen emits its msgpack deserializer, its editor
-metadata, and the self-registration that puts it in the registries at DLL load
-— so new node types never rebuild the editor.
+metadata, and the self-registration that puts it in the registries at DLL load,
+so new node types never rebuild the editor.
 
 ```cpp
 #include "deki-nodegraph/DekiNode.h"
@@ -64,7 +64,7 @@ DEKI_NODE_SUBGRAPH("MyGraph/Steps",   // category the inner add-node menu offers
 - Node ids are unique across the **whole document**, so an id identifies one
   node however deep it sits and the undo commands never carry a path.
 - Links are always **local**: both endpoints of a link live in the same graph.
-  Crossing a boundary is the consumer's job — descend into a node's inner graph,
+  Crossing a boundary is the consumer's job - descend into a node's inner graph,
   or ascend out of it. (`deki-fsm` does both: a State's inner graph is its
   action flow, and a Group's is a sub-flow entered and left through tunnel
   nodes.)
@@ -96,35 +96,34 @@ its inspector or owns a graph, never both.
 
 ## Runtime
 
-`NodeGraphData::LoadFromMemory` parses the compiled MessagePack into
-`NodeFactory`-created node instances plus the link table, recursing through any
-inner graphs, and loading is all-or-nothing — any structural error, unknown node
-type or failed node deserialize destroys everything already created and returns
-`nullptr`. `Root()` is the top-level `Graph`; a subgraph node's contents hang
-off `NodeInstance::inner`, and every query (`FindNode`, `FindFirstOfType`,
-`Next`) is scoped to one `Graph` because every link is. Interpreting pins and
-links is the consumer's job: `deki-fsm` walks them as a state machine, another
-tool could walk the same data as a dialogue tree.
+`NodeGraphData::LoadFromMemory` parses the compiled MessagePack into node
+instances and a link table, recursing into inner graphs.
+
+Loading is all or nothing: any structural error, unknown node type or failed
+deserialize destroys what was built and returns `nullptr`.
+
+`Root()` is the top-level `Graph`. A subgraph node's contents hang off
+`NodeInstance::inner`, and every query (`FindNode`, `FindFirstOfType`, `Next`)
+is scoped to one `Graph`, because every link is.
+
+What the pins and links mean is up to the consumer. `deki-fsm` walks them as a
+state machine; another tool could walk the same data as a dialogue tree.
 
 ## Editor dependencies
 
-The window is built entirely from `EditorUI` and `EditorTheme` (both live in
-`deki-editor.dll`), makes no ImGui calls of its own, and pushes its edits onto
-the editor's shared `CommandHistory` so node-graph undo interleaves with the
-rest of the editor. It survives hot reload through
-`EditorWindow::SaveSession` / `RestoreSession`.
+The window is built from `EditorUI` and `EditorTheme` (both in
+`deki-editor.dll`) and makes no ImGui calls itself. Edits go onto the editor's
+shared `CommandHistory`, so graph undo interleaves with everything else. It
+survives hot reload through `EditorWindow::SaveSession` / `RestoreSession`.
 
 ## Namespace
 
-This package's types live in `DekiNodeGraph`. Scene files store the qualified
-name, so a component is `DekiNodeGraph::SomeComponent` there, and code naming one
-needs the namespace:
+Types live in `DekiNodeGraph`. Scene files store the qualified name, and so does code:
 
 ```cpp
 using namespace DekiNodeGraph;
 obj->AddComponent<SomeComponent>();
 ```
 
-Scenes saved before 0.16.0 used bare names and still load: every component
-records what it used to be called, and a save writes the current name.
+Scenes saved before 0.16.0 used bare names and still load; saving writes the current one.
 
