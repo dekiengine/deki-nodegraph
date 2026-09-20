@@ -3,9 +3,9 @@
 Docs: https://dekiengine.github.io/deki-nodegraph/ (components and properties, generated from the code)
 
 The node-graph feature for Deki Engine: the runtime that loads a compiled
-graph asset, and the editor that authors one. It knows nothing about any
-particular graph. A package declares its own node types and its own domain,
-and this package draws and runs them.
+graph asset, and the editor that authors one. It is generic. A package
+declares its own node types and its own domain, and this package draws and
+runs them.
 
 `deki-fsm` is the first consumer; a project can add node types of its own the
 same way.
