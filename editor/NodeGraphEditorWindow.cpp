@@ -457,6 +457,7 @@ void NodeGraphEditorWindow::OnGUI()
             // Undo can delete the node whose graph is on screen: re-anchor
             // before anything reads the open graph this frame.
             ValidateGraphPath();
+            RefreshDirtyFromSnapshot();
             DrawToolbar();   // hosts the breadcrumb
 
             const float dpi = ui.GetDpiScale();
@@ -528,6 +529,12 @@ void NodeGraphEditorWindow::OnGUI()
     }
     ui.End();
 
+    if (m_CloseAfterConfirm)
+    {
+        m_CloseAfterConfirm = false;
+        isOpen = false;
+    }
+
     // Closing with unsaved changes: keep open, confirm first.
     if (!isOpen && m_Doc && m_Doc->dirty)
     {
@@ -590,8 +597,31 @@ bool NodeGraphEditorWindow::LoadDocument(const std::string& filePath,
     m_EditingProperty.clear();
     m_GraphPath.clear();   // a freshly opened graph always starts at the root
     EnsurePermanentNodes();
+    // A migrated asset (permanent nodes added above) stays unsaved until saved.
+    if (m_Doc->dirty)
+        m_SavedSnapshot.clear();
+    else
+        TakeSavedSnapshot();
+    m_SnapshotGeneration = CommandHistory::Instance().GetGeneration();
     m_Canvas.FocusContent();
     return true;
+}
+
+void NodeGraphEditorWindow::TakeSavedSnapshot()
+{
+    m_SavedSnapshot = m_Doc ? m_Doc->ToJson().dump() : std::string();
+}
+
+void NodeGraphEditorWindow::RefreshDirtyFromSnapshot()
+{
+    if (!m_Doc || !m_Doc->dirty)
+        return;
+    const uint64_t gen = CommandHistory::Instance().GetGeneration();
+    if (gen == m_SnapshotGeneration)
+        return;
+    m_SnapshotGeneration = gen;
+    if (!m_SavedSnapshot.empty() && m_Doc->ToJson().dump() == m_SavedSnapshot)
+        m_Doc->dirty = false;
 }
 
 void NodeGraphEditorWindow::EnsurePermanentNodes()
@@ -729,6 +759,7 @@ void NodeGraphEditorWindow::SaveDocument()
         return;
     }
     m_Doc->dirty = false;
+    TakeSavedSnapshot();
     // The asset pipeline's file watcher picks the change up and recompiles the
     // msgpack cache through the generic data-asset path — nothing else to do.
 }
@@ -3018,6 +3049,7 @@ void NodeGraphEditorWindow::DrawModals()
             {
                 CloseDocument();
                 SetOpen(false);
+                m_CloseAfterConfirm = true;  // Draw's own open flag must not reopen it
             }
             m_ConfirmAction = ConfirmAction::None;
             m_PendingOpenPath.clear();

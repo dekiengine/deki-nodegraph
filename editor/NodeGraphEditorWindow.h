@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -236,6 +237,17 @@ private:
     enum class ConfirmAction { None, CloseWindow, OpenPending };
     ConfirmAction m_ConfirmAction = ConfirmAction::None;
     bool m_ConfirmPopupPending = false;
+    // Set by Save/Discard when the confirmation was for closing the window.
+    bool m_CloseAfterConfirm = false;
+
+    // The document as it is on disk (ToJson().dump()); "" when it must be
+    // saved anyway (a migrated asset). Unsaved = differs from this, checked
+    // again whenever the undo history moves, so undoing back to the saved
+    // state clears the mark.
+    std::string m_SavedSnapshot;
+    uint64_t m_SnapshotGeneration = 0;
+    void TakeSavedSnapshot();
+    void RefreshDirtyFromSnapshot();
 
     // Pending open (waiting on the dirty-check modal) + error modal.
     std::string m_PendingOpenPath;
