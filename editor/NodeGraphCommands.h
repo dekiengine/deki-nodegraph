@@ -182,7 +182,14 @@ public:
     {
         auto doc = NodeGraphCommandDetail::Lock(m_Doc, "MoveNode");
         if (doc)
+        {
             doc->SetNodePos(m_NodeId, m_NewX, m_NewY);
+            // The drag already wrote the new position live, so SetNodePos saw
+            // no change and left the graph clean: a moved node never asked to
+            // be saved.
+            if (m_OldX != m_NewX || m_OldY != m_NewY)
+                doc->dirty = true;
+        }
     }
 
     void Undo() override

@@ -3056,20 +3056,22 @@ void NodeGraphEditorWindow::DrawModals()
             m_PendingOpenCache.clear();
         };
 
-        if (ui.Button("Save"))
+        // The editor's dialog row: Cancel, then the destructive Discard, then
+        // Save as the primary action.
+        const int choice = DekiEditor::SchematicDialogButtons(
+            { { "Cancel" }, { "Discard", DekiEditor::DialogButton::Danger }, { "Save", DekiEditor::DialogButton::Primary } });
+        if (choice == 2)
         {
             SaveDocument();
             ui.CloseCurrentPopup();
             proceed();
         }
-        ui.SameLine();
-        if (ui.Button("Discard"))
+        else if (choice == 1)
         {
             ui.CloseCurrentPopup();
             proceed();
         }
-        ui.SameLine();
-        if (ui.Button("Cancel"))
+        else if (choice == 0)
         {
             m_ConfirmAction = ConfirmAction::None;
             m_PendingOpenPath.clear();
@@ -3083,7 +3085,7 @@ void NodeGraphEditorWindow::DrawModals()
     {
         ui.TextWrapped(m_ErrorText.c_str());
         ui.Spacing();
-        if (ui.Button("OK"))
+        if (DekiEditor::SchematicDialogButtons({ { "OK", DekiEditor::DialogButton::Primary } }) == 0)
         {
             m_ErrorText.clear();
             ui.CloseCurrentPopup();
