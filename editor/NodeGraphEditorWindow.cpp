@@ -5,7 +5,7 @@
 #include <deki-editor/CommandHistory.h>
 #include "deki-nodegraph/editor/NodeGraphCommands.h"
 #include "deki-nodegraph/editor/NodePropertyJson.h"
-#include <deki-editor/EditorNaming.h>            // shared property-name nicifier
+#include <deki-editor/EditorNaming.h>  // shared property-name nicifier
 
 #include <deki-editor/EditorUI.h>
 #include <deki-editor/EditorApplication.h>
@@ -39,337 +39,410 @@
 #include <utility>
 #include <vector>
 
-
 namespace DekiEditor
 {
 
 namespace
 {
-    // Palette color packed for the EditorUI style/draw calls, with an optional
-    // alpha scale for tints.
-    uint32_t PackPalette(const ImVec4& c, float alphaScale = 1.0f)
-    {
-        auto ch = [](float v) { return static_cast<uint8_t>(v * 255.0f + 0.5f); };
-        return EditorUI::Rgba(ch(c.x), ch(c.y), ch(c.z), ch(c.w * alphaScale));
-    }
+// Palette color packed for the EditorUI style/draw calls, with an optional
+// alpha scale for tints.
+uint32_t PackPalette(const ImVec4& c, float alphaScale = 1.0f)
+{
+    auto ch = [](float v) { return static_cast<uint8_t>(v * 255.0f + 0.5f); };
+    return EditorUI::Rgba(ch(c.x), ch(c.y), ch(c.z), ch(c.w * alphaScale));
+}
 
-    // Enum storage is 1/2/4 bytes (Deki::PropertyInfo::enumSize).
-    int ReadEnumIndex(const void* field, uint8_t enumSize)
+// Enum storage is 1/2/4 bytes (Deki::PropertyInfo::enumSize).
+int ReadEnumIndex(const void* field, uint8_t enumSize)
+{
+    switch (enumSize)
     {
-        switch (enumSize)
+        case 1:
         {
-            case 1: { uint8_t v;  std::memcpy(&v, field, 1); return v; }
-            case 2: { uint16_t v; std::memcpy(&v, field, 2); return v; }
-            default: { uint32_t v; std::memcpy(&v, field, 4); return static_cast<int>(v); }
+            uint8_t v;
+            std::memcpy(&v, field, 1);
+            return v;
         }
-    }
-
-    // "HeroBehavior/Logic" -> domain "HeroBehavior", group "Logic".
-    bool SplitCategory(const char* category, std::string& outDomain, std::string& outGroup)
-    {
-        if (!category)
-            return false;
-        const char* slash = std::strchr(category, '/');
-        if (slash)
+        case 2:
         {
-            outDomain.assign(category, slash - category);
-            outGroup.assign(slash + 1);
+            uint16_t v;
+            std::memcpy(&v, field, 2);
+            return v;
         }
-        else
+        default:
         {
-            outDomain = category;
-            outGroup.clear();
+            uint32_t v;
+            std::memcpy(&v, field, 4);
+            return static_cast<int>(v);
         }
-        return !outDomain.empty();
-    }
-
-    // Categories whose node types exist ONLY inside another node, and so must
-    // never be offered on the root canvas nor seeded there as permanents:
-    //   - a child stack's category (DEKI_NODE_CHILDREN), authored in an
-    //     inspector, and
-    //   - a subgraph category that DIFFERS from its owner's own category
-    //     (DEKI_NODE_SUBGRAPH). The "differs" test matters: a group whose
-    //     contents are the same kind of node as itself (states containing
-    //     states) must not hide that category from the root.
-    std::vector<std::string> InnerOnlyCategories()
-    {
-        std::vector<std::string> result;
-        for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
-        {
-            if (meta->childCategory && meta->childCategory[0] != '\0')
-                result.push_back(meta->childCategory);
-            if (meta->subgraphCategory && meta->subgraphCategory[0] != '\0' &&
-                std::strcmp(meta->subgraphCategory, meta->category) != 0)
-                result.push_back(meta->subgraphCategory);
-        }
-        return result;
-    }
-
-    bool Contains(const std::vector<std::string>& list, const char* value)
-    {
-        return value && std::find(list.begin(), list.end(), value) != list.end();
-    }
-
-    // Is this type some OTHER type's declared subgraph entry (a state's action
-    // Entry, a group's Group In)? Such a node is permanent and undeletable, but
-    // it belongs INSIDE its owner: one is seeded per subgraph instance, and the
-    // root must never get one.
-    bool IsSubgraphEntryType(const DekiNodeMeta* meta)
-    {
-        for (const DekiNodeMeta* other : NodeTypeRegistry::Instance().GetAllNodes())
-        {
-            if (other->subgraphEntry && other->subgraphEntry[0] != '\0' &&
-                std::strcmp(other->subgraphEntry, meta->name) == 0)
-                return true;
-        }
-        return false;
-    }
-
-    // Current JSON value of one property (for undo capture). Works for any
-    // reflected instance: top-level nodes and child-stack entries alike.
-    nlohmann::json PropertyValueJsonOf(const void* instance, const DekiNodeMeta& meta,
-                                       const Deki::PropertyInfo& p)
-    {
-        nlohmann::json all;
-        if (NodePropertiesToJson(instance, meta, all) && all.contains(p.name))
-            return all[p.name];
-        return nlohmann::json();
-    }
-
-    nlohmann::json PropertyValueJson(const NodeGraphDocNode& node, const Deki::PropertyInfo& p)
-    {
-        return PropertyValueJsonOf(node.instance, *node.meta, p);
-    }
-
-    // Find a property by name on a meta (nullptr if absent).
-    const Deki::PropertyInfo* FindProperty(const DekiNodeMeta& meta, const char* name)
-    {
-        if (!name)
-            return nullptr;
-        for (int i = 0; i < meta.propertyCount; ++i)
-            if (std::strcmp(meta.properties[i].name, name) == 0)
-                return &meta.properties[i];
-        return nullptr;
-    }
-
-    // Editor label for a node type: its explicit display name (the node's
-    // StaticNodeDisplayName member), else the raw name nicified
-    // (camelCase/snake_case -> Title Case) so nodes without one still read well.
-    std::string NodeDisplayName(const DekiNodeMeta* meta)
-    {
-        if (meta->displayName && meta->displayName[0] != '\0')
-            return meta->displayName;
-        return EditorNaming::NicifyName(meta->name);
-    }
-
-    // ImGui asserts at End() when a window's last act was moving the cursor
-    // without submitting an item, and both EndToolbar and the rename field's
-    // cursor restore end exactly that way. Any item clears the flag, but every
-    // item also costs an ItemSpacing.y, so this is submitted where that gap
-    // does no harm (the bottom of the panel) rather than between the header and
-    // the row it is supposed to sit against.
-    void CloseSetCursor(EditorUI& ui)
-    {
-        ui.Dummy(0.0f, 0.0f);
-    }
-
-    // The property a node's canvas title comes from, when it is one the panel
-    // can edit as text. Null for a type that has no title property, which is
-    // what tells the panel to head the section with the type name alone.
-    const Deki::PropertyInfo* TitleProperty(const NodeGraphDocNode& node)
-    {
-        if (!node.meta || !node.instance || !node.meta->titleProperty)
-            return nullptr;
-        const Deki::PropertyInfo* p = FindProperty(*node.meta, node.meta->titleProperty);
-        return (p && p->type == Deki::PropertyType::String) ? p : nullptr;
-    }
-
-    // Display label for one output pin: the value of the dynamic-outputs string
-    // array when the type has one (an FSM transition's event name), else the
-    // type's fixed pin label, else the 1-based index. The same rule the canvas
-    // uses, so a link reads in the inspector the way it looks on screen.
-    std::string OutputPinLabel(const NodeGraphDocNode& node, int pin)
-    {
-        if (!node.meta || pin < 0)
-            return {};
-        if (node.meta->dynamicOutputsProperty)
-        {
-            const Deki::PropertyInfo* p =
-                FindProperty(*node.meta, node.meta->dynamicOutputsProperty);
-            if (p && p->type == Deki::PropertyType::Array &&
-                p->elementType == Deki::PropertyType::String)
-            {
-                const auto* names = reinterpret_cast<const std::vector<std::string>*>(
-                    static_cast<const char*>(node.instance) + p->offset);
-                if (pin < static_cast<int>(names->size()) && !(*names)[pin].empty())
-                    return (*names)[pin];
-            }
-        }
-        else if (node.meta->outputPins && pin < node.meta->outputPinCount)
-        {
-            return node.meta->outputPins[pin];
-        }
-        return std::to_string(pin + 1);
-    }
-
-    // --- Object-name picker helpers -------------------------------------
-    // Case-insensitive substring match; an empty needle matches everything.
-    bool MatchesSearch(const std::string& text, const char* search)
-    {
-        if (!search || search[0] == '\0')
-            return true;
-        std::string t = text, s = search;
-        for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return t.find(s) != std::string::npos;
-    }
-
-    // "Root/Parent/" for a child of Parent; empty for a root object.
-    std::string HierarchyPath(Deki::Object* obj)
-    {
-        std::vector<std::string> parts;
-        for (Deki::Object* cur = obj->GetParent(); cur; cur = cur->GetParent())
-            parts.push_back(cur->GetName());
-        std::string path;
-        for (auto it = parts.rbegin(); it != parts.rend(); ++it)
-            path += *it + "/";
-        return path;
-    }
-
-    // True when the object carries `typeName` or a subclass of it (walks the
-    // registered base chain, like the inspector's ObjectRef filter).
-    bool ObjectHasComponent(Deki::Object* obj, const char* typeName)
-    {
-        auto& registry = Deki::ComponentRegistry::Instance();
-        for (Deki::Component* c : obj->GetComponents())
-        {
-            for (uint32_t typeId = c->GetType(); typeId != 0; )
-            {
-                const Deki::ComponentMeta* meta = registry.GetMeta(typeId);
-                if (!meta)
-                    break;
-                if (meta->name && std::strcmp(meta->name, typeName) == 0)
-                    return true;
-                typeId = meta->baseTypeId;
-            }
-        }
-        return false;
-    }
-
-    // --- PropertyRef helpers ---------------------------------------------
-    // Serialized form of a reference (the ids are derived, never stored).
-    nlohmann::json PropertyRefToJson(const Deki::PropertyRef& r)
-    {
-        nlohmann::json j = nlohmann::json::object();
-        j["object"] = r.object;
-        j["component"] = r.component;
-        j["field"] = r.field;
-        return j;
-    }
-
-    // A field a literal can actually be written into. Asset/object references,
-    // arrays and colors are excluded: there is no sensible text form, so they
-    // must not be offered in the picker at all. Vector2 is included — it is
-    // authored as "x, y" and drawn as two drag fields.
-    bool IsLiteralWritable(const Deki::PropertyInfo& p)
-    {
-        switch (p.type)
-        {
-            case Deki::PropertyType::Int8:   case Deki::PropertyType::Int16:
-            case Deki::PropertyType::Int32:  case Deki::PropertyType::Int64:
-            case Deki::PropertyType::UInt8:  case Deki::PropertyType::UInt16:
-            case Deki::PropertyType::UInt32: case Deki::PropertyType::UInt64:
-            case Deki::PropertyType::Float:  case Deki::PropertyType::Double:
-            case Deki::PropertyType::Bool:   case Deki::PropertyType::String:
-            case Deki::PropertyType::Enum:   case Deki::PropertyType::Vector2:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    // Walk a component's own properties and then its base classes', so an
-    // inherited field (RendererComponent::sorting_order and friends) is offered
-    // too — the device-side field table is flattened the same way.
-    template <typename Fn>
-    void ForEachComponentField(const Deki::ComponentMeta* meta, Fn&& fn)
-    {
-        auto& registry = Deki::ComponentRegistry::Instance();
-        for (const Deki::ComponentMeta* m = meta; m; )
-        {
-            for (int i = 0; i < m->propertyCount; ++i)
-                fn(m->properties[i]);
-            if (m->baseTypeId == 0 || m->baseTypeId == m->typeId)
-                break;
-            m = registry.GetMeta(m->baseTypeId);
-        }
-    }
-
-    const Deki::PropertyInfo* FindComponentField(const Deki::ComponentMeta* meta,
-                                               const std::string& fieldName)
-    {
-        if (!meta || fieldName.empty())
-            return nullptr;
-        const Deki::PropertyInfo* found = nullptr;
-        ForEachComponentField(meta, [&](const Deki::PropertyInfo& p) {
-            if (!found && p.name && fieldName == p.name)
-                found = &p;
-        });
-        return found;
-    }
-
-    // The component a reference names, by the type GUID it stores.
-    const Deki::ComponentMeta* MetaOfRef(const Deki::PropertyRef& r)
-    {
-        if (r.component.empty())
-            return nullptr;
-        return Deki::ComponentRegistry::Instance().GetMeta(r.component);
-    }
-
-    // Find an object of the open scene by name. An empty name means "whichever
-    // object runs this graph", which is unknowable at edit time -> nullptr.
-    Deki::Object* FindSceneObjectByName(const std::string& name)
-    {
-        if (name.empty())
-            return nullptr;
-        ::Deki::Scene* scene = EditorApplication::Get().GetActiveScene();
-        if (!scene)
-            return nullptr;
-        for (Deki::Object* obj : scene->GetObjects())
-            if (obj && obj->GetName() == name)
-                return obj;
-        return nullptr;
-    }
-
-    uint32_t PaletteRgba(const ImVec4& c, float alphaOverride = -1.0f)
-    {
-        const float a = alphaOverride >= 0.0f ? alphaOverride : c.w;
-        return EditorUI::Rgba(static_cast<uint8_t>(c.x * 255.0f),
-                              static_cast<uint8_t>(c.y * 255.0f),
-                              static_cast<uint8_t>(c.z * 255.0f),
-                              static_cast<uint8_t>(a * 255.0f));
-    }
-
-    // Canvas colors from the schematic theme palette, so the graph view sits
-    // in the same family as every other panel.
-    NodeCanvasPalette ThemeCanvasPalette()
-    {
-        NodeCanvasPalette p;
-        p.background         = PaletteRgba(Palette::Bg);
-        p.grid               = PaletteRgba(Palette::Line);
-        p.nodeBody           = PaletteRgba(Palette::Panel, 0.96f);
-        p.nodeBorder         = PaletteRgba(Palette::Line2);
-        p.nodeBorderSelected = PaletteRgba(Palette::Accent);
-        p.title              = PaletteRgba(Palette::Fg);
-        p.pinLabel           = PaletteRgba(Palette::Dim);
-        p.pin                = PaletteRgba(Palette::FolderIcon);
-        p.pinHovered         = PaletteRgba(Palette::Accent);
-        p.link               = PaletteRgba(Palette::Dim);
-        p.linkSelected       = PaletteRgba(Palette::Accent);
-        p.linkDrag           = PaletteRgba(Palette::Accent);
-        return p;
     }
 }
+
+// "HeroBehavior/Logic" -> domain "HeroBehavior", group "Logic".
+bool SplitCategory(const char* category, std::string& outDomain, std::string& outGroup)
+{
+    if (!category)
+    {
+        return false;
+    }
+    const char* slash = std::strchr(category, '/');
+    if (slash)
+    {
+        outDomain.assign(category, slash - category);
+        outGroup.assign(slash + 1);
+    }
+    else
+    {
+        outDomain = category;
+        outGroup.clear();
+    }
+    return !outDomain.empty();
+}
+
+// Categories whose node types exist ONLY inside another node, and so must
+// never be offered on the root canvas nor seeded there as permanents:
+//   - a child stack's category (DEKI_NODE_CHILDREN), authored in an
+//     inspector, and
+//   - a subgraph category that DIFFERS from its owner's own category
+//     (DEKI_NODE_SUBGRAPH). The "differs" test matters: a group whose
+//     contents are the same kind of node as itself (states containing
+//     states) must not hide that category from the root.
+std::vector<std::string> InnerOnlyCategories()
+{
+    std::vector<std::string> result;
+    for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
+    {
+        if (meta->childCategory && meta->childCategory[0] != '\0')
+        {
+            result.push_back(meta->childCategory);
+        }
+        if (meta->subgraphCategory && meta->subgraphCategory[0] != '\0' &&
+            std::strcmp(meta->subgraphCategory, meta->category) != 0)
+        {
+            result.push_back(meta->subgraphCategory);
+        }
+    }
+    return result;
+}
+
+bool Contains(const std::vector<std::string>& list, const char* value)
+{
+    return value && std::find(list.begin(), list.end(), value) != list.end();
+}
+
+// Is this type some OTHER type's declared subgraph entry (a state's action
+// Entry, a group's Group In)? Such a node is permanent and undeletable, but
+// it belongs INSIDE its owner: one is seeded per subgraph instance, and the
+// root must never get one.
+bool IsSubgraphEntryType(const DekiNodeMeta* meta)
+{
+    for (const DekiNodeMeta* other : NodeTypeRegistry::Instance().GetAllNodes())
+    {
+        if (other->subgraphEntry && other->subgraphEntry[0] != '\0' &&
+            std::strcmp(other->subgraphEntry, meta->name) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Current JSON value of one property (for undo capture). Works for any
+// reflected instance: top-level nodes and child-stack entries alike.
+nlohmann::json PropertyValueJsonOf(const void* instance, const DekiNodeMeta& meta, const Deki::PropertyInfo& p)
+{
+    nlohmann::json all;
+    if (NodePropertiesToJson(instance, meta, all) && all.contains(p.name))
+    {
+        return all[p.name];
+    }
+    return nlohmann::json();
+}
+
+nlohmann::json PropertyValueJson(const NodeGraphDocNode& node, const Deki::PropertyInfo& p)
+{
+    return PropertyValueJsonOf(node.instance, *node.meta, p);
+}
+
+// Find a property by name on a meta (nullptr if absent).
+const Deki::PropertyInfo* FindProperty(const DekiNodeMeta& meta, const char* name)
+{
+    if (!name)
+    {
+        return nullptr;
+    }
+    for (int i = 0; i < meta.propertyCount; ++i)
+    {
+        if (std::strcmp(meta.properties[i].name, name) == 0)
+        {
+            return &meta.properties[i];
+        }
+    }
+    return nullptr;
+}
+
+// Editor label for a node type: its explicit display name (the node's
+// StaticNodeDisplayName member), else the raw name nicified
+// (camelCase/snake_case -> Title Case) so nodes without one still read well.
+std::string NodeDisplayName(const DekiNodeMeta* meta)
+{
+    if (meta->displayName && meta->displayName[0] != '\0')
+    {
+        return meta->displayName;
+    }
+    return EditorNaming::NicifyName(meta->name);
+}
+
+// ImGui asserts at End() when a window's last act was moving the cursor
+// without submitting an item, and both EndToolbar and the rename field's
+// cursor restore end exactly that way. Any item clears the flag, but every
+// item also costs an ItemSpacing.y, so this is submitted where that gap
+// does no harm (the bottom of the panel) rather than between the header and
+// the row it is supposed to sit against.
+void CloseSetCursor(EditorUI& ui)
+{
+    ui.Dummy(0.0f, 0.0f);
+}
+
+// The property a node's canvas title comes from, when it is one the panel
+// can edit as text. Null for a type that has no title property, which is
+// what tells the panel to head the section with the type name alone.
+const Deki::PropertyInfo* TitleProperty(const NodeGraphDocNode& node)
+{
+    if (!node.meta || !node.instance || !node.meta->titleProperty)
+    {
+        return nullptr;
+    }
+    const Deki::PropertyInfo* p = FindProperty(*node.meta, node.meta->titleProperty);
+    return (p && p->type == Deki::PropertyType::String) ? p : nullptr;
+}
+
+// Display label for one output pin: the value of the dynamic-outputs string
+// array when the type has one (an FSM transition's event name), else the
+// type's fixed pin label, else the 1-based index. The same rule the canvas
+// uses, so a link reads in the inspector the way it looks on screen.
+std::string OutputPinLabel(const NodeGraphDocNode& node, int pin)
+{
+    if (!node.meta || pin < 0)
+    {
+        return {};
+    }
+    if (node.meta->dynamicOutputsProperty)
+    {
+        const Deki::PropertyInfo* p = FindProperty(*node.meta, node.meta->dynamicOutputsProperty);
+        if (p && p->type == Deki::PropertyType::Array && p->elementType == Deki::PropertyType::String)
+        {
+            const auto* names =
+                reinterpret_cast<const std::vector<std::string>*>(static_cast<const char*>(node.instance) + p->offset);
+            if (pin < static_cast<int>(names->size()) && !(*names)[pin].empty())
+            {
+                return (*names)[pin];
+            }
+        }
+    }
+    else if (node.meta->outputPins && pin < node.meta->outputPinCount)
+    {
+        return node.meta->outputPins[pin];
+    }
+    return std::to_string(pin + 1);
+}
+
+// --- Object-name picker helpers -------------------------------------
+// Case-insensitive substring match; an empty needle matches everything.
+bool MatchesSearch(const std::string& text, const char* search)
+{
+    if (!search || search[0] == '\0')
+    {
+        return true;
+    }
+    std::string t = text, s = search;
+    for (char& c : t)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    for (char& c : s)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return t.find(s) != std::string::npos;
+}
+
+// "Root/Parent/" for a child of Parent; empty for a root object.
+std::string HierarchyPath(Deki::Object* obj)
+{
+    std::vector<std::string> parts;
+    for (Deki::Object* cur = obj->GetParent(); cur; cur = cur->GetParent())
+    {
+        parts.push_back(cur->GetName());
+    }
+    std::string path;
+    for (auto it = parts.rbegin(); it != parts.rend(); ++it)
+    {
+        path += *it + "/";
+    }
+    return path;
+}
+
+// True when the object carries `typeName` or a subclass of it (walks the
+// registered base chain, like the inspector's ObjectRef filter).
+bool ObjectHasComponent(Deki::Object* obj, const char* typeName)
+{
+    auto& registry = Deki::ComponentRegistry::Instance();
+    for (Deki::Component* c : obj->GetComponents())
+    {
+        for (uint32_t typeId = c->GetType(); typeId != 0;)
+        {
+            const Deki::ComponentMeta* meta = registry.GetMeta(typeId);
+            if (!meta)
+            {
+                break;
+            }
+            if (meta->name && std::strcmp(meta->name, typeName) == 0)
+            {
+                return true;
+            }
+            typeId = meta->baseTypeId;
+        }
+    }
+    return false;
+}
+
+// --- PropertyRef helpers ---------------------------------------------
+// Serialized form of a reference (the ids are derived, never stored).
+nlohmann::json PropertyRefToJson(const Deki::PropertyRef& r)
+{
+    nlohmann::json j = nlohmann::json::object();
+    j["object"] = r.object;
+    j["component"] = r.component;
+    j["field"] = r.field;
+    return j;
+}
+
+// A field a literal can actually be written into. Asset/object references,
+// arrays and colors are excluded: there is no sensible text form, so they
+// must not be offered in the picker at all. Vector2 is included — it is
+// authored as "x, y" and drawn as two drag fields.
+bool IsLiteralWritable(const Deki::PropertyInfo& p)
+{
+    switch (p.type)
+    {
+        case Deki::PropertyType::Int8:
+        case Deki::PropertyType::Int16:
+        case Deki::PropertyType::Int32:
+        case Deki::PropertyType::Int64:
+        case Deki::PropertyType::UInt8:
+        case Deki::PropertyType::UInt16:
+        case Deki::PropertyType::UInt32:
+        case Deki::PropertyType::UInt64:
+        case Deki::PropertyType::Float:
+        case Deki::PropertyType::Double:
+        case Deki::PropertyType::Bool:
+        case Deki::PropertyType::String:
+        case Deki::PropertyType::Enum:
+        case Deki::PropertyType::Vector2: return true;
+        default: return false;
+    }
+}
+
+// Walk a component's own properties and then its base classes', so an
+// inherited field (RendererComponent::sorting_order and friends) is offered
+// too — the device-side field table is flattened the same way.
+template <typename Fn>
+void ForEachComponentField(const Deki::ComponentMeta* meta, Fn&& fn)
+{
+    auto& registry = Deki::ComponentRegistry::Instance();
+    for (const Deki::ComponentMeta* m = meta; m;)
+    {
+        for (int i = 0; i < m->propertyCount; ++i)
+        {
+            fn(m->properties[i]);
+        }
+        if (m->baseTypeId == 0 || m->baseTypeId == m->typeId)
+        {
+            break;
+        }
+        m = registry.GetMeta(m->baseTypeId);
+    }
+}
+
+const Deki::PropertyInfo* FindComponentField(const Deki::ComponentMeta* meta, const std::string& fieldName)
+{
+    if (!meta || fieldName.empty())
+    {
+        return nullptr;
+    }
+    const Deki::PropertyInfo* found = nullptr;
+    ForEachComponentField(meta,
+                          [&](const Deki::PropertyInfo& p)
+                          {
+                              if (!found && p.name && fieldName == p.name)
+                              {
+                                  found = &p;
+                              }
+                          });
+    return found;
+}
+
+// The component a reference names, by the type GUID it stores.
+const Deki::ComponentMeta* MetaOfRef(const Deki::PropertyRef& r)
+{
+    if (r.component.empty())
+    {
+        return nullptr;
+    }
+    return Deki::ComponentRegistry::Instance().GetMeta(r.component);
+}
+
+// Find an object of the open scene by name. An empty name means "whichever
+// object runs this graph", which is unknowable at edit time -> nullptr.
+Deki::Object* FindSceneObjectByName(const std::string& name)
+{
+    if (name.empty())
+    {
+        return nullptr;
+    }
+    ::Deki::Scene* scene = EditorApplication::Get().GetActiveScene();
+    if (!scene)
+    {
+        return nullptr;
+    }
+    for (Deki::Object* obj : scene->GetObjects())
+    {
+        if (obj && obj->GetName() == name)
+        {
+            return obj;
+        }
+    }
+    return nullptr;
+}
+
+uint32_t PaletteRgba(const ImVec4& c, float alphaOverride = -1.0f)
+{
+    const float a = alphaOverride >= 0.0f ? alphaOverride : c.w;
+    return EditorUI::Rgba(static_cast<uint8_t>(c.x * 255.0f), static_cast<uint8_t>(c.y * 255.0f),
+                          static_cast<uint8_t>(c.z * 255.0f), static_cast<uint8_t>(a * 255.0f));
+}
+
+// Canvas colors from the schematic theme palette, so the graph view sits
+// in the same family as every other panel.
+NodeCanvasPalette ThemeCanvasPalette()
+{
+    NodeCanvasPalette p;
+    p.background = PaletteRgba(Palette::Bg);
+    p.grid = PaletteRgba(Palette::Line);
+    p.nodeBody = PaletteRgba(Palette::Panel, 0.96f);
+    p.nodeBorder = PaletteRgba(Palette::Line2);
+    p.nodeBorderSelected = PaletteRgba(Palette::Accent);
+    p.title = PaletteRgba(Palette::Fg);
+    p.pinLabel = PaletteRgba(Palette::Dim);
+    p.pin = PaletteRgba(Palette::FolderIcon);
+    p.pinHovered = PaletteRgba(Palette::Accent);
+    p.link = PaletteRgba(Palette::Dim);
+    p.linkSelected = PaletteRgba(Palette::Accent);
+    p.linkDrag = PaletteRgba(Palette::Accent);
+    return p;
+}
+}  // namespace
 
 // ============================================================================
 // EditorWindow overrides
@@ -383,7 +456,9 @@ bool NodeGraphEditorWindow::CanOpenAssetType(const char* assetType)
 void NodeGraphEditorWindow::OpenFile(const char* filePath, const char* cachePath)
 {
     if (!filePath)
+    {
         return;
+    }
 
     if (m_Doc && m_Doc->dirty)
     {
@@ -414,8 +489,7 @@ void NodeGraphEditorWindow::OnGUI()
     if (m_Doc)
     {
         const std::string name = std::filesystem::path(m_Doc->assetPath).filename().string();
-        std::snprintf(title, sizeof(title), "Node Graph - %s%s###NodeGraph",
-                      name.c_str(), m_Doc->dirty ? "*" : "");
+        std::snprintf(title, sizeof(title), "Node Graph - %s%s###NodeGraph", name.c_str(), m_Doc->dirty ? "*" : "");
     }
     else
     {
@@ -458,7 +532,7 @@ void NodeGraphEditorWindow::OnGUI()
             // before anything reads the open graph this frame.
             ValidateGraphPath();
             RefreshDirtyFromSnapshot();
-            DrawToolbar();   // hosts the breadcrumb
+            DrawToolbar();  // hosts the breadcrumb
 
             const float dpi = ui.GetDpiScale();
             float availW, availH;
@@ -470,7 +544,9 @@ void NodeGraphEditorWindow::OnGUI()
             const float seamW = 1.0f;
             float canvasW = availW - panelW;
             if (canvasW < 120.0f)
+            {
                 canvasW = availW * 0.5f;
+            }
 
             if (ui.BeginChild("##ng_canvas", canvasW, 0.0f, false))
             {
@@ -507,10 +583,8 @@ void NodeGraphEditorWindow::OnGUI()
                 // the border appeared under the cursor and nowhere else.
                 // Drawing after all content beats every one of them.
                 const uint32_t colLine = EditorUI::Rgba(
-                    static_cast<uint8_t>(Palette::Line2.x * 255.0f),
-                    static_cast<uint8_t>(Palette::Line2.y * 255.0f),
-                    static_cast<uint8_t>(Palette::Line2.z * 255.0f),
-                    static_cast<uint8_t>(Palette::Line2.w * 255.0f));
+                    static_cast<uint8_t>(Palette::Line2.x * 255.0f), static_cast<uint8_t>(Palette::Line2.y * 255.0f),
+                    static_cast<uint8_t>(Palette::Line2.z * 255.0f), static_cast<uint8_t>(Palette::Line2.w * 255.0f));
                 ui.DrawRectFilled(propsX, propsY, propsX + seamW, propsY + availH, colLine);
             }
             ui.EndChild();
@@ -518,8 +592,7 @@ void NodeGraphEditorWindow::OnGUI()
             DrawAddNodeMenu();
 
             // Ctrl+S saves the graph while this window (or its children) is focused.
-            if (ui.IsWindowFocused(true) && ui.IsKeyCtrl() &&
-                ui.IsKeyPressed(EditorUI::Key::S, false) && m_Doc->dirty)
+            if (ui.IsWindowFocused(true) && ui.IsKeyCtrl() && ui.IsKeyPressed(EditorUI::Key::S, false) && m_Doc->dirty)
             {
                 SaveDocument();
             }
@@ -550,8 +623,7 @@ void NodeGraphEditorWindow::OnGUI()
 // Document lifecycle
 // ============================================================================
 
-bool NodeGraphEditorWindow::LoadDocument(const std::string& filePath,
-                                         const std::string& cachePath,
+bool NodeGraphEditorWindow::LoadDocument(const std::string& filePath, const std::string& cachePath,
                                          std::string& outError)
 {
     std::ifstream f(filePath);
@@ -595,13 +667,17 @@ bool NodeGraphEditorWindow::LoadDocument(const std::string& filePath,
     m_SelectedNode = 0;
     m_SelectedLink = -1;
     m_EditingProperty.clear();
-    m_GraphPath.clear();   // a freshly opened graph always starts at the root
+    m_GraphPath.clear();  // a freshly opened graph always starts at the root
     EnsurePermanentNodes();
     // A migrated asset (permanent nodes added above) stays unsaved until saved.
     if (m_Doc->dirty)
+    {
         m_SavedSnapshot.clear();
+    }
     else
+    {
         TakeSavedSnapshot();
+    }
     m_SnapshotGeneration = CommandHistory::Instance().GetGeneration();
     m_Canvas.FocusContent();
     return true;
@@ -615,19 +691,27 @@ void NodeGraphEditorWindow::TakeSavedSnapshot()
 void NodeGraphEditorWindow::RefreshDirtyFromSnapshot()
 {
     if (!m_Doc || !m_Doc->dirty)
+    {
         return;
+    }
     const uint64_t gen = CommandHistory::Instance().GetGeneration();
     if (gen == m_SnapshotGeneration)
+    {
         return;
+    }
     m_SnapshotGeneration = gen;
     if (!m_SavedSnapshot.empty() && m_Doc->ToJson().dump() == m_SavedSnapshot)
+    {
         m_Doc->dirty = false;
+    }
 }
 
 void NodeGraphEditorWindow::EnsurePermanentNodes()
 {
     if (!m_Doc)
+    {
         return;
+    }
 
     // Deliberately NOT undoable: this restores a structural invariant of the
     // domain (its fixed lifecycle nodes), it is not an edit the user made.
@@ -637,16 +721,24 @@ void NodeGraphEditorWindow::EnsurePermanentNodes()
     for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
     {
         if (!meta->permanent)
+        {
             continue;
+        }
         std::string metaDomain, group;
         if (!SplitCategory(meta->category, metaDomain, group))
+        {
             continue;
+        }
         if (metaDomain != m_Doc->domain->domainKey)
+        {
             continue;
+        }
         if (Contains(innerOnly, meta->category) || IsSubgraphEntryType(meta))
-            continue;   // permanent INSIDE a subgraph (a state's action Entry, a
-                        // group's Group In): one is seeded per subgraph instance
-                        // by NodeGraphDocument::EnsureSubgraph, never at the root
+        {
+            continue;  // permanent INSIDE a subgraph (a state's action Entry, a
+                       // group's Group In): one is seeded per subgraph instance
+                       // by NodeGraphDocument::EnsureSubgraph, never at the root
+        }
 
         // Permanence is a property of the DOMAIN ROOT, not of a category: an
         // inner graph seeds only the single entry node its owner declares
@@ -661,7 +753,9 @@ void NodeGraphEditorWindow::EnsurePermanentNodes()
             }
         }
         if (!present)
+        {
             m_Doc->AddNode(meta->typeId, 40.0f, seedY, 0);
+        }
         seedY += 130.0f;
     }
 }
@@ -677,8 +771,7 @@ NodeGraphDocGraph& NodeGraphEditorWindow::OpenGraph()
     // a logic error; falling back to the root keeps the window drawable.
     if (!graph)
     {
-        DEKI_LOG_ERROR("NodeGraphEditorWindow: open graph %u vanished; returning to the root",
-                       OpenGraphOwner());
+        DEKI_LOG_ERROR("NodeGraphEditorWindow: open graph %u vanished; returning to the root", OpenGraphOwner());
         m_GraphPath.clear();
         graph = &m_Doc->root;
     }
@@ -715,12 +808,16 @@ void NodeGraphEditorWindow::ValidateGraphPath()
 void NodeGraphEditorWindow::EnterSubgraph(uint32_t nodeId)
 {
     if (!m_Doc)
+    {
         return;
+    }
     const NodeGraphDocNode* node = m_Doc->FindNode(nodeId);
     if (!node || !node->meta || !node->meta->subgraphCategory)
-        return;   // ordinary node: double-clicking it does nothing
+    {
+        return;  // ordinary node: double-clicking it does nothing
+    }
 
-    m_Doc->EnsureSubgraph(nodeId);   // older assets predate the inner graph
+    m_Doc->EnsureSubgraph(nodeId);  // older assets predate the inner graph
     m_GraphPath.push_back(nodeId);
     m_SelectedNode = 0;
     m_SelectedLink = -1;
@@ -731,7 +828,9 @@ void NodeGraphEditorWindow::EnterSubgraph(uint32_t nodeId)
 void NodeGraphEditorWindow::NavigateToDepth(size_t depth)
 {
     if (depth >= m_GraphPath.size())
+    {
         return;
+    }
     m_GraphPath.resize(depth);
     m_SelectedNode = 0;
     m_SelectedLink = -1;
@@ -742,7 +841,9 @@ void NodeGraphEditorWindow::NavigateToDepth(size_t depth)
 void NodeGraphEditorWindow::SaveDocument()
 {
     if (!m_Doc)
+    {
         return;
+    }
 
     std::ofstream f(m_Doc->assetPath);
     if (!f.is_open())
@@ -766,8 +867,8 @@ void NodeGraphEditorWindow::SaveDocument()
 
 void NodeGraphEditorWindow::CloseDocument()
 {
-    DestroyPreview();   // before the document: the preview reads its instances
-    m_Doc.reset();   // destructor destroys node instances
+    DestroyPreview();  // before the document: the preview reads its instances
+    m_Doc.reset();     // destructor destroys node instances
     m_SelectedNode = 0;
     m_SelectedLink = -1;
     m_EditingProperty.clear();
@@ -787,7 +888,9 @@ NodeGraphEditorWindow::NodeGraphEditorWindow()
 NodeGraphEditorWindow::~NodeGraphEditorWindow()
 {
     if (s_LiveWindow == this)
+    {
         s_LiveWindow = nullptr;
+    }
     DestroyPreview();
 }
 
@@ -822,7 +925,9 @@ bool NodeGraphEditorWindow::ShowCanvas(uint32_t canvasOwner, uint32_t node, std:
     }
     NavigateToDepth(0);
     for (uint32_t id : path)
+    {
         EnterSubgraph(id);
+    }
     if (node != 0)
     {
         const NodeGraphDocGraph& graph = OpenGraph();
@@ -844,7 +949,9 @@ void NodeGraphEditorWindow::DestroyPreview()
     // the domain's DLL, and after a hot reload the registry may be handing out
     // a different (or no) domain for this asset type.
     if (m_Preview && m_PreviewOps && m_PreviewOps->destroy)
+    {
         m_PreviewOps->destroy(m_Preview);
+    }
     m_Preview = nullptr;
     m_PreviewOps = nullptr;
 }
@@ -855,32 +962,34 @@ void NodeGraphEditorWindow::DestroyPreview()
 
 namespace
 {
-    // Bridge the domain's drawing primitives to EditorUI. A preview provider
-    // lives in another package DLL and must never touch ImGui itself.
-    void PreviewCircleFilled(void* ctx, float cx, float cy, float r, uint32_t rgba)
-    {
-        static_cast<EditorUI*>(ctx)->DrawCircleFilled(cx, cy, r, rgba);
-    }
-    void PreviewRectFilled(void* ctx, float x0, float y0, float x1, float y1, uint32_t rgba)
-    {
-        static_cast<EditorUI*>(ctx)->DrawRectFilled(x0, y0, x1, y1, rgba);
-    }
-    void PreviewLine(void* ctx, float x0, float y0, float x1, float y1,
-                     uint32_t rgba, float thickness)
-    {
-        static_cast<EditorUI*>(ctx)->DrawLine(x0, y0, x1, y1, rgba, thickness);
-    }
+// Bridge the domain's drawing primitives to EditorUI. A preview provider
+// lives in another package DLL and must never touch ImGui itself.
+void PreviewCircleFilled(void* ctx, float cx, float cy, float r, uint32_t rgba)
+{
+    static_cast<EditorUI*>(ctx)->DrawCircleFilled(cx, cy, r, rgba);
 }
+void PreviewRectFilled(void* ctx, float x0, float y0, float x1, float y1, uint32_t rgba)
+{
+    static_cast<EditorUI*>(ctx)->DrawRectFilled(x0, y0, x1, y1, rgba);
+}
+void PreviewLine(void* ctx, float x0, float y0, float x1, float y1, uint32_t rgba, float thickness)
+{
+    static_cast<EditorUI*>(ctx)->DrawLine(x0, y0, x1, y1, rgba, thickness);
+}
+}  // namespace
 
-void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
-                                               float canvasW, float canvasH)
+void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY, float canvasW, float canvasH)
 {
     if (!m_Doc || !m_Doc->domain)
+    {
         return;
+    }
 
     const NodeGraphPreviewOps& ops = m_Doc->domain->preview;
     if (!ops.create || !ops.destroy || !ops.tick)
-        return;   // This domain has nothing to show while you edit it.
+    {
+        return;  // This domain has nothing to show while you edit it.
+    }
 
     auto& ui = EditorUI::Get();
 
@@ -889,7 +998,9 @@ void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
         m_Preview = ops.create();
         m_PreviewOps = &ops;
         if (!m_Preview)
+        {
             return;
+        }
     }
 
     const float dpi = ui.GetDpiScale();
@@ -899,41 +1010,49 @@ void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
 
     float boxW = 260.0f * dpi;
     if (boxW > canvasW - margin * 2.0f)
+    {
         boxW = canvasW - margin * 2.0f;
+    }
     const float viewH = 150.0f * dpi;
     // Collapsed keeps only the header strip, so the overlay can be folded away
     // when it is sitting on top of the part of the graph you are wiring.
-    const float boxH = m_PreviewCollapsed
-        ? (rowH + pad * 2.0f)
-        : (rowH + viewH + rowH + pad * 4.0f);
+    const float boxH = m_PreviewCollapsed ? (rowH + pad * 2.0f) : (rowH + viewH + rowH + pad * 4.0f);
 
     if (boxW < 80.0f * dpi || boxH > canvasH)
-        return;   // Canvas too small to host it; the graph matters more.
+    {
+        return;  // Canvas too small to host it; the graph matters more.
+    }
 
     const float boxX = canvasX + margin;
     const float boxY = canvasY + canvasH - boxH - margin;
 
-    ui.DrawRectFilled(boxX, boxY, boxX + boxW, boxY + boxH,
-                      EditorUI::Rgba(22, 22, 26, 235), 5.0f * dpi);
-    ui.DrawRect(boxX, boxY, boxX + boxW, boxY + boxH,
-                EditorUI::Rgba(255, 255, 255, 28), 1.0f, 5.0f * dpi);
+    ui.DrawRectFilled(boxX, boxY, boxX + boxW, boxY + boxH, EditorUI::Rgba(22, 22, 26, 235), 5.0f * dpi);
+    ui.DrawRect(boxX, boxY, boxX + boxW, boxY + boxH, EditorUI::Rgba(255, 255, 255, 28), 1.0f, 5.0f * dpi);
 
     // ---- Header strip: fold, title, transport ----
     ui.SetCursorScreenPos(boxX + pad, boxY + pad);
     if (ui.SmallButton(m_PreviewCollapsed ? ICON_TI_CHEVRON_UP : ICON_TI_CHEVRON_DOWN))
+    {
         m_PreviewCollapsed = !m_PreviewCollapsed;
+    }
     ui.SameLine();
     ui.AlignTextToFramePadding();
     ui.TextDisabled("Preview");
     ui.SameLine();
     if (ui.SmallButton(m_PreviewPlaying ? ICON_TI_PLAYER_PAUSE : ICON_TI_PLAYER_PLAY))
+    {
         m_PreviewPlaying = !m_PreviewPlaying;
+    }
     ui.SameLine();
     if (ui.SmallButton(ICON_TI_REFRESH) && ops.reset)
+    {
         ops.reset(m_Preview);
+    }
 
     if (m_PreviewCollapsed)
-        return;   // Folded: the header is the whole overlay.
+    {
+        return;  // Folded: the header is the whole overlay.
+    }
 
     // The root graph is the one that runs. Descending into a subgraph changes
     // what the canvas shows, never what the preview simulates.
@@ -943,7 +1062,10 @@ void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
     links.reserve(m_Doc->root.links.size());
     for (const NodeGraphDocNode& n : m_Doc->root.nodes)
     {
-        if (!n.meta || !n.instance) continue;
+        if (!n.meta || !n.instance)
+        {
+            continue;
+        }
         NodeGraphPreviewNode pn;
         pn.id = n.id;
         pn.typeId = n.meta->typeId;
@@ -971,8 +1093,7 @@ void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
     const float viewY = boxY + pad + rowH + pad;
     const float viewW = boxW - pad * 2.0f;
 
-    ui.DrawRectFilled(viewX, viewY, viewX + viewW, viewY + viewH,
-                      EditorUI::Rgba(12, 12, 14, 255), 3.0f * dpi);
+    ui.DrawRectFilled(viewX, viewY, viewX + viewW, viewY + viewH, EditorUI::Rgba(12, 12, 14, 255), 3.0f * dpi);
 
     NodeGraphPreviewCanvas canvas;
     canvas.ctx = &ui;
@@ -996,11 +1117,15 @@ void NodeGraphEditorWindow::DrawPreviewOverlay(float canvasX, float canvasY,
 void NodeGraphEditorWindow::DrawNodeGizmo(const NodeGraphDocNode& node)
 {
     if (!m_Doc || !m_Doc->domain || !node.meta || !node.instance)
+    {
         return;
+    }
 
     const NodeGraphNodeGizmoOps& ops = m_Doc->domain->gizmos;
     if (!ops.height || !ops.draw)
-        return;   // This domain pictures nothing.
+    {
+        return;  // This domain pictures nothing.
+    }
 
     auto& ui = EditorUI::Get();
     const float dpi = ui.GetDpiScale();
@@ -1009,7 +1134,9 @@ void NodeGraphEditorWindow::DrawNodeGizmo(const NodeGraphDocNode& node)
     // values being edited (a shape switched to Point has nothing to show).
     const float cssH = ops.height(node.meta->typeId, node.instance);
     if (cssH <= 0.0f)
+    {
         return;
+    }
 
     const float h = cssH * dpi;
     ui.Spacing();
@@ -1021,7 +1148,9 @@ void NodeGraphEditorWindow::DrawNodeGizmo(const NodeGraphDocNode& node)
     ui.GetContentRegionAvail(&availW, &availH);
     availW -= Metrics::InspectorRightPad * dpi;
     if (availW < 32.0f * dpi)
+    {
         return;
+    }
 
     float x = 0.0f, y = 0.0f;
     ui.GetCursorScreenPos(&x, &y);
@@ -1059,18 +1188,23 @@ void NodeGraphEditorWindow::DrawToolbar()
 
     ui.BeginToolbar();
     if (ui.ToolbarIconButton("##ng_save", ICON_TI_DEVICE_FLOPPY, "Save graph", m_Doc->dirty))
+    {
         SaveDocument();
+    }
 
     // Navigation sits right next to Save, because with nested graphs "where am
     // I and how do I get out" is a permanent question, not an occasional one.
-    if (ui.ToolbarIconButton("##ng_up", ICON_TI_ARROW_BACK_UP, "Up one level",
-                             !m_GraphPath.empty()))
+    if (ui.ToolbarIconButton("##ng_up", ICON_TI_ARROW_BACK_UP, "Up one level", !m_GraphPath.empty()))
     {
         if (!m_GraphPath.empty())
+        {
             NavigateToDepth(m_GraphPath.size() - 1);
+        }
     }
     if (ui.ToolbarIconButton("##ng_frame", ICON_TI_FOCUS_CENTERED, "Frame all nodes"))
+    {
         m_Canvas.FocusContent();
+    }
 
     DrawBreadcrumb();
 
@@ -1085,16 +1219,13 @@ void NodeGraphEditorWindow::DrawToolbar()
     ui.SameLine();
     const NodeGraphDocGraph& graph = OpenGraph();
     char info[512];
-    std::snprintf(info, sizeof(info), "%s  |  %s  |  %d nodes, %d links",
-                  m_Doc->domain->displayName,
+    std::snprintf(info, sizeof(info), "%s  |  %s  |  %d nodes, %d links", m_Doc->domain->displayName,
                   std::filesystem::path(m_Doc->assetPath).filename().string().c_str(),
-                  static_cast<int>(graph.nodes.size()),
-                  static_cast<int>(graph.links.size()));
+                  static_cast<int>(graph.nodes.size()), static_cast<int>(graph.links.size()));
 
     float textX = 0.0f, textY = 0.0f;
     ui.GetCursorScreenPos(&textX, &textY);
-    ui.SetCursorScreenPos(textX + ui.GetDpiScale() * 6.0f,
-                          rowTop + (rowBottom - rowTop - ui.GetFontSize()) * 0.5f);
+    ui.SetCursorScreenPos(textX + ui.GetDpiScale() * 6.0f, rowTop + (rowBottom - rowTop - ui.GetFontSize()) * 0.5f);
     ui.TextDisabled(info);
     ui.EndToolbar();
 }
@@ -1106,21 +1237,25 @@ void NodeGraphEditorWindow::DrawToolbar()
 void NodeGraphEditorWindow::DrawBreadcrumb()
 {
     if (m_GraphPath.empty())
+    {
         return;
+    }
 
     auto& ui = EditorUI::Get();
 
     if (ui.ToolbarButton("Graph"))
     {
         NavigateToDepth(0);
-        return;   // m_GraphPath just changed; the rest of the trail is gone
+        return;  // m_GraphPath just changed; the rest of the trail is gone
     }
 
     for (size_t i = 0; i < m_GraphPath.size(); ++i)
     {
         const NodeGraphDocNode* node = m_Doc->FindNode(m_GraphPath[i]);
         if (!node)
+        {
             break;
+        }
 
         const bool isCurrent = (i + 1 == m_GraphPath.size());
         ui.PushID(static_cast<int>(i));
@@ -1153,13 +1288,11 @@ void NodeGraphEditorWindow::DrawCanvas(float width, float height)
     // still, which is the part being looked at. Skipped on the first draw, when
     // there is no previous size, and harmless when a frame-all is pending since
     // that recomputes the pan outright.
-    if (width > 0.0f && height > 0.0f &&
-        m_CanvasPannedForW > 0.0f && m_CanvasPannedForH > 0.0f &&
+    if (width > 0.0f && height > 0.0f && m_CanvasPannedForW > 0.0f && m_CanvasPannedForH > 0.0f &&
         (width != m_CanvasPannedForW || height != m_CanvasPannedForH))
     {
         m_Canvas.SetView(m_Canvas.GetPanX() + (width - m_CanvasPannedForW) * 0.5f,
-                         m_Canvas.GetPanY() + (height - m_CanvasPannedForH) * 0.5f,
-                         m_Canvas.GetZoom());
+                         m_Canvas.GetPanY() + (height - m_CanvasPannedForH) * 0.5f, m_Canvas.GetZoom());
     }
     if (width > 0.0f && height > 0.0f)
     {
@@ -1201,8 +1334,8 @@ void NodeGraphEditorWindow::DrawCanvas(float width, float height)
             if (dynProp && dynProp->type == Deki::PropertyType::Array &&
                 dynProp->elementType == Deki::PropertyType::String)
             {
-                names = reinterpret_cast<const std::vector<std::string>*>(
-                    static_cast<const char*>(n.instance) + dynProp->offset);
+                names = reinterpret_cast<const std::vector<std::string>*>(static_cast<const char*>(n.instance) +
+                                                                          dynProp->offset);
             }
 
             auto& text = dynLabelText[i];
@@ -1212,9 +1345,13 @@ void NodeGraphEditorWindow::DrawCanvas(float width, float height)
             for (int k = 0; k < outCount; ++k)
             {
                 if (names && k < static_cast<int>(names->size()) && !(*names)[k].empty())
+                {
                     text.push_back((*names)[k]);
+                }
                 else
+                {
                     text.push_back(std::to_string(k + 1));
+                }
                 ptrs.push_back(text.back().c_str());
             }
             cn.outputLabels = ptrs.data();
@@ -1243,10 +1380,8 @@ void NodeGraphEditorWindow::DrawCanvas(float width, float height)
     }
 
     NodeCanvasEvents events;
-    m_Canvas.Draw("##nodecanvas", width, height,
-                  cnodes.data(), static_cast<int>(cnodes.size()),
-                  clinks.data(), static_cast<int>(clinks.size()),
-                  events);
+    m_Canvas.Draw("##nodecanvas", width, height, cnodes.data(), static_cast<int>(cnodes.size()), clinks.data(),
+                  static_cast<int>(clinks.size()), events);
 
     HandleCanvasEvents(events);
 }
@@ -1275,7 +1410,7 @@ void NodeGraphEditorWindow::HandleCanvasEvents(const NodeCanvasEvents& events)
         // Double-click descends into a subgraph node; on any other node the
         // canvas still reported it and EnterSubgraph simply declines.
         EnterSubgraph(events.activatedNode);
-        return;   // the open graph changed: this frame's other events are stale
+        return;  // the open graph changed: this frame's other events are stale
     }
 
     if (events.nodeMoving)
@@ -1295,8 +1430,8 @@ void NodeGraphEditorWindow::HandleCanvasEvents(const NodeCanvasEvents& events)
         {
             if (node->x != events.startX || node->y != events.startY)
             {
-                CommandHistory::Instance().ExecuteNoMerge(std::make_unique<MoveNodeCommand>(
-                    m_Doc, node->id, events.startX, events.startY, node->x, node->y));
+                CommandHistory::Instance().ExecuteNoMerge(
+                    std::make_unique<MoveNodeCommand>(m_Doc, node->id, events.startX, events.startY, node->x, node->y));
             }
         }
     }
@@ -1305,8 +1440,7 @@ void NodeGraphEditorWindow::HandleCanvasEvents(const NodeCanvasEvents& events)
     {
         const NodeGraphDocNode* from = doc.FindNode(events.fromNode);
         const NodeGraphDocNode* to = doc.FindNode(events.toNode);
-        const bool valid = from && to &&
-                           events.fromPin >= 0 && events.fromPin < doc.OutputPinCount(*from) &&
+        const bool valid = from && to && events.fromPin >= 0 && events.fromPin < doc.OutputPinCount(*from) &&
                            events.toPin >= 0 && events.toPin < to->meta->inputPinCount;
         if (valid)
         {
@@ -1314,8 +1448,7 @@ void NodeGraphEditorWindow::HandleCanvasEvents(const NodeCanvasEvents& events)
             const NodeGraphDocLink* existing = doc.FindLinkFromPin(link.fromNode, link.fromPin);
             if (!existing || !(*existing == link))
             {
-                CommandHistory::Instance().ExecuteNoMerge(
-                    std::make_unique<AddLinkCommand>(m_Doc, link));
+                CommandHistory::Instance().ExecuteNoMerge(std::make_unique<AddLinkCommand>(m_Doc, link));
             }
         }
     }
@@ -1331,7 +1464,9 @@ void NodeGraphEditorWindow::HandleCanvasEvents(const NodeCanvasEvents& events)
     }
 
     if (events.deleteRequested)
+    {
         DeleteSelection();
+    }
 }
 
 void NodeGraphEditorWindow::DeleteSelection()
@@ -1345,10 +1480,11 @@ void NodeGraphEditorWindow::DeleteSelection()
         if (const NodeGraphDocNode* node = doc.FindNode(m_SelectedNode))
         {
             if (node->meta->permanent)
+            {
                 return;
+            }
         }
-        CommandHistory::Instance().ExecuteNoMerge(
-            std::make_unique<DeleteNodeCommand>(m_Doc, m_SelectedNode));
+        CommandHistory::Instance().ExecuteNoMerge(std::make_unique<DeleteNodeCommand>(m_Doc, m_SelectedNode));
         m_SelectedNode = 0;
     }
     else if (m_SelectedLink >= 0 && m_SelectedLink < static_cast<int>(OpenGraph().links.size()))
@@ -1386,7 +1522,9 @@ void NodeGraphEditorWindow::DrawAddNodeMenu()
         if (const uint32_t owner = OpenGraphOwner())
         {
             if (const NodeGraphDocNode* ownerNode = m_Doc->FindNode(owner))
+            {
                 subgraphCategory = ownerNode->meta->subgraphCategory;
+            }
         }
 
         // Node types of this domain, grouped by category remainder, in
@@ -1396,23 +1534,30 @@ void NodeGraphEditorWindow::DrawAddNodeMenu()
         {
             std::string metaDomain, group;
             if (!SplitCategory(meta->category, metaDomain, group))
+            {
                 continue;
+            }
             if (metaDomain != m_Doc->domain->domainKey)
+            {
                 continue;
+            }
             if (subgraphCategory)
             {
                 if (std::strcmp(meta->category, subgraphCategory) != 0)
-                    continue;   // not part of this subgraph's vocabulary
+                {
+                    continue;  // not part of this subgraph's vocabulary
+                }
             }
             else if (Contains(innerOnly, meta->category))
             {
-                continue;   // inner-only type: authored inside a parent
+                continue;  // inner-only type: authored inside a parent
             }
             if (meta->permanent)
-                continue;   // fixed lifecycle node: always present, never added
+            {
+                continue;  // fixed lifecycle node: always present, never added
+            }
 
-            auto it = std::find_if(groups.begin(), groups.end(),
-                                   [&](const auto& g) { return g.first == group; });
+            auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == group; });
             if (it == groups.end())
             {
                 groups.push_back({ group, {} });
@@ -1422,7 +1567,9 @@ void NodeGraphEditorWindow::DrawAddNodeMenu()
         }
 
         if (groups.empty())
+        {
             ui.TextDisabled("No node types registered for this graph");
+        }
 
         for (const auto& [group, metas] : groups)
         {
@@ -1435,9 +1582,8 @@ void NodeGraphEditorWindow::DrawAddNodeMenu()
                 {
                     if (ui.MenuItem(NodeDisplayName(meta).c_str(), true))
                     {
-                        auto cmd = std::make_unique<AddNodeCommand>(
-                            m_Doc, meta->typeId, meta->name, m_AddMenuGraphX, m_AddMenuGraphY,
-                            OpenGraphOwner());
+                        auto cmd = std::make_unique<AddNodeCommand>(m_Doc, meta->typeId, meta->name, m_AddMenuGraphX,
+                                                                    m_AddMenuGraphY, OpenGraphOwner());
                         AddNodeCommand* raw = cmd.get();
                         CommandHistory::Instance().ExecuteNoMerge(std::move(cmd));
                         m_SelectedNode = raw->GetNodeId();
@@ -1445,14 +1591,16 @@ void NodeGraphEditorWindow::DrawAddNodeMenu()
                     }
                 }
                 if (useSubmenu)
+                {
                     ui.EndMenu();
+                }
             }
         }
 
-        ui.PopStyleVar();       // ItemSpacing (PushContextMenuItemStyle)
+        ui.PopStyleVar();  // ItemSpacing (PushContextMenuItemStyle)
         ui.EndPopup();
     }
-    ui.PopStyleVar();           // WindowPadding (PushContextMenuPopupStyle)
+    ui.PopStyleVar();  // WindowPadding (PushContextMenuPopupStyle)
 }
 
 // ============================================================================
@@ -1470,7 +1618,9 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
     // header again and so could never clear it themselves — the rename would
     // still be open the next time that node came back.
     if (m_RenamingNode != m_SelectedNode)
+    {
         m_RenamingNode = 0;
+    }
 
     // The panel's rows are laid out in the shared property context
     // (BeginPropertyContext / EndPropertyContext): the Inspector's body gutter,
@@ -1494,8 +1644,8 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
         // as the node's property list grows.
         if (DrawNodeActionsToolbar(*node))
         {
-            CloseSetCursor(ui);   // the panel ends here, on the toolbar's cursor
-            return;               // entered its subgraph or deleted it
+            CloseSetCursor(ui);  // the panel ends here, on the toolbar's cursor
+            return;              // entered its subgraph or deleted it
         }
         BeginPropertyContext();
 
@@ -1514,23 +1664,32 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
         {
             const Deki::PropertyInfo& p = node->meta->properties[i];
             if (&p == titleProp)
-                continue;   // hoisted into the title block
-            const bool isDynamicOutputs =
-                node->meta->dynamicOutputsProperty &&
-                std::strcmp(p.name, node->meta->dynamicOutputsProperty) == 0 &&
-                p.type == Deki::PropertyType::Array;
+            {
+                continue;  // hoisted into the title block
+            }
+            const bool isDynamicOutputs = node->meta->dynamicOutputsProperty &&
+                                          std::strcmp(p.name, node->meta->dynamicOutputsProperty) == 0 &&
+                                          p.type == Deki::PropertyType::Array;
             ui.PushID(p.name);
             if (isDynamicOutputs && p.elementType == Deki::PropertyType::Float)
+            {
                 DrawWeightsWidget(*node, p);
+            }
             else if (isDynamicOutputs && p.elementType == Deki::PropertyType::String)
+            {
                 DrawTransitionsWidget(*node, p);
+            }
             else
+            {
                 DrawPropertyWidget(*node, p);
+            }
             ui.PopID();
         }
 
         if (node->meta->childCategory && node->meta->childCategory[0] != '\0')
+        {
             DrawChildStack(*node);
+        }
 
         // A node with nothing but a name (a Group Exit, say) draws no rows at
         // all, so the header's cursor restore would be the panel's last act.
@@ -1548,7 +1707,7 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
         if (deleteLink)
         {
             DeleteSelection();
-            CloseSetCursor(ui);   // the panel ends here, on the toolbar's cursor
+            CloseSetCursor(ui);  // the panel ends here, on the toolbar's cursor
             return;
         }
         BeginPropertyContext();
@@ -1559,14 +1718,13 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
             // Endpoints by NAME, the way they read on the canvas. "node 4 pin 0
             // -> node 7 pin 0" is accurate and tells you nothing.
             const NodeGraphDocNode* from = doc.FindNode(link.fromNode);
-            const NodeGraphDocNode* to   = doc.FindNode(link.toNode);
+            const NodeGraphDocNode* to = doc.FindNode(link.toNode);
             const std::string fromName = from ? NodeTitle(*from) : "(missing)";
-            const std::string toName   = to   ? NodeTitle(*to)   : "(missing)";
-            const std::string pinName  = from ? OutputPinLabel(*from, link.fromPin) : std::string();
+            const std::string toName = to ? NodeTitle(*to) : "(missing)";
+            const std::string pinName = from ? OutputPinLabel(*from, link.fromPin) : std::string();
 
             char line[320];
-            std::snprintf(line, sizeof(line), "%s  " ICON_TI_CHEVRON_RIGHT "  %s",
-                          fromName.c_str(), toName.c_str());
+            std::snprintf(line, sizeof(line), "%s  " ICON_TI_CHEVRON_RIGHT "  %s", fromName.c_str(), toName.c_str());
             ui.Text(line);
             if (!pinName.empty())
             {
@@ -1592,8 +1750,7 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
             {
                 ui.Spacing();
                 char hint[192];
-                std::snprintf(hint, sizeof(hint), ICON_TI_ARROW_BACK_UP "   Inside %s",
-                              NodeTitle(*ownerNode).c_str());
+                std::snprintf(hint, sizeof(hint), ICON_TI_ARROW_BACK_UP "   Inside %s", NodeTitle(*ownerNode).c_str());
                 ui.TextDisabled(hint);
             }
         }
@@ -1608,7 +1765,7 @@ bool NodeGraphEditorWindow::DrawNodeActionsToolbar(NodeGraphDocNode& node)
     // Cells are read first and acted on after EndToolbar: both verbs invalidate
     // the node the strip was built from.
     bool open = false;
-    bool del  = false;
+    bool del = false;
 
     ui.BeginToolbar();
     if (node.meta->subgraphCategory)
@@ -1618,15 +1775,18 @@ bool NodeGraphEditorWindow::DrawNodeActionsToolbar(NodeGraphDocNode& node)
         // it, while the cell stays an icon like the rest of the strip.
         const int inner = node.inner ? static_cast<int>(node.inner->nodes.size()) : 0;
         char tip[96];
-        std::snprintf(tip, sizeof(tip), "Open this node's graph (%d node%s inside)",
-                      inner, inner == 1 ? "" : "s");
+        std::snprintf(tip, sizeof(tip), "Open this node's graph (%d node%s inside)", inner, inner == 1 ? "" : "s");
         open = ui.ToolbarIconButton("##ng_opennode", ICON_TI_BOX_MULTIPLE, tip);
     }
     if (node.meta->permanent)
+    {
         ui.ToolbarButton(ICON_TI_LOCK "  Permanent", false);
+    }
     else
-        del = ui.ToolbarIconButton("##ng_delnode", ICON_TI_TRASH, "Delete this node",
-                                   true, false, /*destructive*/ true);
+    {
+        del =
+            ui.ToolbarIconButton("##ng_delnode", ICON_TI_TRASH, "Delete this node", true, false, /*destructive*/ true);
+    }
     ui.EndToolbar();
 
     if (open)
@@ -1642,8 +1802,7 @@ bool NodeGraphEditorWindow::DrawNodeActionsToolbar(NodeGraphDocNode& node)
     return false;
 }
 
-void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
-                                           const Deki::PropertyInfo* titleProp)
+void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node, const Deki::PropertyInfo* titleProp)
 {
     auto& ui = EditorUI::Get();
     const float dpi = ui.GetDpiScale();
@@ -1681,9 +1840,8 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
     ui.PushStyleVar(EditorUI::StyleVar::ItemSpacing, spacingX, 0.0f);
 
     // An id-only label draws the band empty, leaving the row for the field.
-    const std::string bandLabel = renaming
-        ? std::string("###ng_nodeband")
-        : (titleProp ? NodeTitle(node) : typeName) + "###ng_nodeband";
+    const std::string bandLabel =
+        renaming ? std::string("###ng_nodeband") : (titleProp ? NodeTitle(node) : typeName) + "###ng_nodeband";
     float labelX = contentX;
     const bool bandClicked = SchematicSectionBand(bandLabel.c_str(), &labelX);
 
@@ -1697,8 +1855,7 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
         float afterBandX = 0.0f, afterBandY = 0.0f;
         ui.GetCursorScreenPos(&afterBandX, &afterBandY);
 
-        auto* field = reinterpret_cast<std::string*>(
-            static_cast<char*>(node.instance) + titleProp->offset);
+        auto* field = reinterpret_cast<std::string*>(static_cast<char*>(node.instance) + titleProp->offset);
         char buf[128];
         std::snprintf(buf, sizeof(buf), "%s", field->c_str());
 
@@ -1722,16 +1879,17 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
         // Drawn as the band's TITLE, not as a field: same font, size, color and
         // line, no frame or padding around it. The header keeps its look and
         // the caret is the only thing that says it is editable.
-        const bool changed = SchematicBandTitleField(
-            "##ng_nodename", buf, static_cast<int>(sizeof(buf)),
-            labelX, bandMinY, bandMaxY, contentRight - labelX, typeName.c_str());
+        const bool changed = SchematicBandTitleField("##ng_nodename", buf, static_cast<int>(sizeof(buf)), labelX,
+                                                     bandMinY, bandMaxY, contentRight - labelX, typeName.c_str());
         if (ui.IsItemActive() && m_EditingProperty != editKey)
         {
             m_EditingProperty = editKey;
             m_EditingOldValue = *field;
         }
         if (changed)
-            *field = buf;   // live preview (the canvas title follows)
+        {
+            *field = buf;  // live preview (the canvas title follows)
+        }
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == editKey)
         {
             CommandHistory::Instance().ExecuteNoMerge(std::make_unique<SetNodePropertyCommand>(
@@ -1741,7 +1899,9 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
         // Closes the field again when focus goes anywhere else, typed in or
         // not (which is why this is not the ...AfterEdit variant).
         if (ui.IsItemDeactivated())
+        {
             m_RenamingNode = 0;
+        }
 
         ui.PopID();
         ui.SetCursorScreenPos(afterBandX, afterBandY);
@@ -1749,7 +1909,9 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
     else if (titleProp)
     {
         if (ui.IsItemHovered())
+        {
             ui.SetTooltip("Click to rename");
+        }
         if (bandClicked)
         {
             m_RenamingNode = node.id;
@@ -1757,13 +1919,11 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node,
         }
     }
 
-    ui.PopStyleVar();   // ItemSpacing
+    ui.PopStyleVar();  // ItemSpacing
 }
 
-void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMeta& meta,
-                                                const Deki::PropertyInfo& p,
-                                                const std::string& editKey,
-                                                uint32_t selfNodeId, const CommitFn& commit)
+void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMeta& meta, const Deki::PropertyInfo& p,
+                                                const std::string& editKey, uint32_t selfNodeId, const CommitFn& commit)
 {
     auto& ui = EditorUI::Get();
     void* field = static_cast<char*>(instance) + p.offset;
@@ -1776,14 +1936,16 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
     // undo step). Live changes write the instance for preview. `editKey` keeps
     // same-named properties of a node and its children from colliding.
     const nlohmann::json preValue = PropertyValueJsonOf(instance, meta, p);
-    auto captureIfActivated = [&]() {
+    auto captureIfActivated = [&]()
+    {
         if (ui.IsItemActive() && m_EditingProperty != editKey)
         {
             m_EditingProperty = editKey;
             m_EditingOldValue = preValue;
         }
     };
-    auto commitOnDeactivate = [&]() {
+    auto commitOnDeactivate = [&]()
+    {
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == editKey)
         {
             commit(m_EditingOldValue, PropertyValueJsonOf(instance, meta, p));
@@ -1817,14 +1979,19 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             std::memcpy(&v, field, sizeof v);
             bool changed;
             if (p.hasRange && p.useSlider)
+            {
                 changed = ui.SliderFloat("##v", &v, p.minValue, p.maxValue, "%.3f");
+            }
             else
-                changed = ui.DragFloat("##v", &v, 0.05f,
-                                       p.hasRange ? p.minValue : 0.0f,
-                                       p.hasRange ? p.maxValue : 0.0f);
+            {
+                changed =
+                    ui.DragFloat("##v", &v, 0.05f, p.hasRange ? p.minValue : 0.0f, p.hasRange ? p.maxValue : 0.0f);
+            }
             captureIfActivated();
             if (changed)
-                std::memcpy(field, &v, sizeof v);   // live preview
+            {
+                std::memcpy(field, &v, sizeof v);  // live preview
+            }
             commitOnDeactivate();
             break;
         }
@@ -1833,8 +2000,7 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             int32_t pre;
             std::memcpy(&pre, field, sizeof pre);
             int v = pre;
-            const bool changed = ui.DragInt("##v", &v, 0.2f,
-                                            p.hasRange ? static_cast<int>(p.minValue) : 0,
+            const bool changed = ui.DragInt("##v", &v, 0.2f, p.hasRange ? static_cast<int>(p.minValue) : 0,
                                             p.hasRange ? static_cast<int>(p.maxValue) : 0);
             captureIfActivated();
             if (changed)
@@ -1850,20 +2016,23 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             bool v;
             std::memcpy(&v, field, sizeof v);
             if (ui.Checkbox("##v", &v))
+            {
                 commit(nlohmann::json(!v), nlohmann::json(v));
+            }
             break;
         }
         case Deki::PropertyType::Enum:
         {
             const int current = ReadEnumIndex(field, p.enumSize);
-            const char* preview = (current >= 0 && current < p.enumCount)
-                                      ? p.enumValues[current] : "?";
+            const char* preview = (current >= 0 && current < p.enumCount) ? p.enumValues[current] : "?";
             if (ui.BeginCombo("##v", preview))
             {
                 for (int e = 0; e < p.enumCount; ++e)
                 {
                     if (ui.Selectable(p.enumValues[e], e == current) && e != current)
+                    {
                         commit(nlohmann::json(current), nlohmann::json(e));
+                    }
                 }
                 ui.EndCombo();
             }
@@ -1880,20 +2049,22 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             // a picker button that fills it from the open scene's hierarchy.
             const bool isObjectName = p.componentRefType != nullptr;
             if (isObjectName)
+            {
                 ui.SetNextItemWidth(ui.CalcItemWidth() - ui.GetFrameHeight());
+            }
 
             const bool changed = ui.InputText("##v", buf, sizeof(buf));
             captureIfActivated();
             if (changed)
-                *static_cast<std::string*>(field) = buf;   // live preview
+            {
+                *static_cast<std::string*>(field) = buf;  // live preview
+            }
             commitOnDeactivate();
 
             if (isObjectName)
             {
-                DrawObjectNamePicker(p.componentRefType, current,
-                    [&](const std::string& name) {
-                        commit(nlohmann::json(current), nlohmann::json(name));
-                    });
+                DrawObjectNamePicker(p.componentRefType, current, [&](const std::string& name)
+                                     { commit(nlohmann::json(current), nlohmann::json(name)); });
             }
             break;
         }
@@ -1908,8 +2079,7 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             auto* ref = static_cast<Deki::AssetRefBase*>(field);
             char buf[80];
             std::snprintf(buf, sizeof(buf), "%s", ref->guid.c_str());
-            const bool changed = ui.InputTextWithHint("##v", "(no asset)", buf,
-                                                      static_cast<int>(sizeof(buf)));
+            const bool changed = ui.InputTextWithHint("##v", "(no asset)", buf, static_cast<int>(sizeof(buf)));
             captureIfActivated();
             if (changed)
             {
@@ -1919,7 +2089,9 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             }
             commitOnDeactivate();
             if (ui.IsItemHovered())
+            {
                 ui.SetTooltip("Asset GUID. The picker is not wired into the graph window yet");
+            }
             break;
         }
         case Deki::PropertyType::NodeRef:
@@ -1935,11 +2107,9 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             {
                 std::snprintf(previewBuf, sizeof(previewBuf), "(none)");
             }
-            else if (const NodeGraphDocNode* target = selfNodeId == currentId ? nullptr
-                                                       : m_Doc->FindNode(currentId))
+            else if (const NodeGraphDocNode* target = selfNodeId == currentId ? nullptr : m_Doc->FindNode(currentId))
             {
-                std::snprintf(previewBuf, sizeof(previewBuf), "%s (#%u)",
-                              NodeTitle(*target).c_str(), currentId);
+                std::snprintf(previewBuf, sizeof(previewBuf), "%s (#%u)", NodeTitle(*target).c_str(), currentId);
             }
             else
             {
@@ -1949,35 +2119,39 @@ void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMe
             if (ui.BeginCombo("##v", previewBuf))
             {
                 if (ui.Selectable("(none)", currentId == 0) && currentId != 0)
+                {
                     commit(nlohmann::json(currentId), nlohmann::json(0u));
+                }
                 // Scoped to the open graph: a node reference names a sibling,
                 // never something in another state's private action flow.
                 for (const NodeGraphDocNode& other : OpenGraph().nodes)
                 {
                     if (other.id == selfNodeId)
-                        continue;   // no self-jump
+                    {
+                        continue;  // no self-jump
+                    }
                     char itemBuf[160];
-                    std::snprintf(itemBuf, sizeof(itemBuf), "%s (#%u)",
-                                  NodeTitle(other).c_str(), other.id);
+                    std::snprintf(itemBuf, sizeof(itemBuf), "%s (#%u)", NodeTitle(other).c_str(), other.id);
                     const bool selected = other.id == currentId;
                     if (ui.Selectable(itemBuf, selected) && !selected)
+                    {
                         commit(nlohmann::json(currentId), nlohmann::json(other.id));
+                    }
                 }
                 ui.EndCombo();
             }
             break;
         }
-        default:
-            ui.TextDisabled("(unsupported property type)");
-            break;
+        default: ui.TextDisabled("(unsupported property type)"); break;
     }
 
     if (p.tooltip && ui.IsItemHovered())
+    {
         ui.SetTooltip(p.tooltip);
+    }
 }
 
-void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter,
-                                                 const std::string& current,
+void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter, const std::string& current,
                                                  const std::function<void(const std::string&)>& onPick)
 {
     auto& ui = EditorUI::Get();
@@ -2003,9 +2177,12 @@ void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter,
 
         // Selecting writes the object's NAME; the empty name means "the object
         // the graph runs on", which is what an empty field already meant.
-        auto pick = [&](const std::string& name) {
+        auto pick = [&](const std::string& name)
+        {
             if (name != current)
+            {
                 onPick(name);
+            }
             ui.CloseCurrentPopup();
         };
 
@@ -2021,8 +2198,7 @@ void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter,
         }
         else
         {
-            if (MatchesSearch("Owner", m_ObjectPickerSearch) &&
-                ui.Selectable("(Owner)", current.empty()))
+            if (MatchesSearch("Owner", m_ObjectPickerSearch) && ui.Selectable("(Owner)", current.empty()))
             {
                 pick(std::string());
             }
@@ -2030,24 +2206,32 @@ void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter,
             // Depth-first over the hierarchy so the list reads like the
             // Hierarchy panel; each row shows the parent path for context.
             bool anyListed = false;
-            std::function<void(Deki::Object*)> listObject = [&](Deki::Object* obj) {
+            std::function<void(Deki::Object*)> listObject = [&](Deki::Object* obj)
+            {
                 const std::string name = obj->GetName();
                 const std::string path = HierarchyPath(obj);
-                if ((!filter || ObjectHasComponent(obj, filter)) &&
-                    MatchesSearch(path + name, m_ObjectPickerSearch))
+                if ((!filter || ObjectHasComponent(obj, filter)) && MatchesSearch(path + name, m_ObjectPickerSearch))
                 {
                     anyListed = true;
                     ui.PushID(obj);
                     if (ui.Selectable((path + name).c_str(), !current.empty() && name == current))
+                    {
                         pick(name);
+                    }
                     ui.PopID();
                 }
                 for (Deki::Object* child : obj->GetChildren())
+                {
                     listObject(child);
+                }
             };
             for (Deki::Object* root : scene->GetObjects())
+            {
                 if (!root->GetParent())
+                {
                     listObject(root);
+                }
+            }
 
             if (!anyListed)
             {
@@ -2064,25 +2248,23 @@ void NodeGraphEditorWindow::DrawObjectNamePicker(const char* componentFilter,
             }
         }
 
-        ui.PopStyleVar();       // ItemSpacing (PushContextMenuItemStyle)
+        ui.PopStyleVar();  // ItemSpacing (PushContextMenuItemStyle)
         ui.EndPopup();
     }
-    ui.PopStyleVar();           // WindowPadding (PushContextMenuPopupStyle)
+    ui.PopStyleVar();  // WindowPadding (PushContextMenuPopupStyle)
 }
 
 void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, void* instance,
-                                                  const std::string& label,
-                                                  const std::string& editKey,
-                                                  const CommitFn& commit)
+                                                   const std::string& label, const std::string& editKey,
+                                                   const CommitFn& commit)
 {
     auto& ui = EditorUI::Get();
     auto* ref = reinterpret_cast<Deki::PropertyRef*>(static_cast<char*>(instance) + p.offset);
 
     // Every edit rewrites the WHOLE reference as one undo step: copy it, change
     // the one part, commit both sides.
-    auto commitWith = [&](const nlohmann::json& before, Deki::PropertyRef next) {
-        commit(before, PropertyRefToJson(next));
-    };
+    auto commitWith = [&](const nlohmann::json& before, Deki::PropertyRef next)
+    { commit(before, PropertyRefToJson(next)); };
 
     const Deki::ComponentMeta* meta = MetaOfRef(*ref);
 
@@ -2096,15 +2278,16 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         char buf[128];
         std::snprintf(buf, sizeof(buf), "%s", ref->object.c_str());
         ui.SetNextItemWidth(ui.CalcItemWidth() - ui.GetFrameHeight());
-        const bool changed = ui.InputTextWithHint("##name", "(Owner)", buf,
-                                                 static_cast<int>(sizeof(buf)));
+        const bool changed = ui.InputTextWithHint("##name", "(Owner)", buf, static_cast<int>(sizeof(buf)));
         if (ui.IsItemActive() && m_EditingProperty != objectKey)
         {
             m_EditingProperty = objectKey;
             m_EditingOldValue = PropertyRefToJson(*ref);
         }
         if (changed)
-            ref->object = buf;   // live preview
+        {
+            ref->object = buf;  // live preview
+        }
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == objectKey)
         {
             commit(m_EditingOldValue, PropertyRefToJson(*ref));
@@ -2112,11 +2295,13 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         }
 
         const nlohmann::json before = PropertyRefToJson(*ref);
-        DrawObjectNamePicker(nullptr, ref->object, [&](const std::string& name) {
-            Deki::PropertyRef next = *ref;
-            next.object = name;
-            commitWith(before, next);
-        });
+        DrawObjectNamePicker(nullptr, ref->object,
+                             [&](const std::string& name)
+                             {
+                                 Deki::PropertyRef next = *ref;
+                                 next.object = name;
+                                 commitWith(before, next);
+                             });
     }
     ui.PopID();
 
@@ -2133,29 +2318,42 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         const bool isVariable = (ref->component == Deki::kVariableRefComponent);
         const char* preview = "(none)";
         if (isTransform)
+        {
             preview = "Transform";
+        }
         else if (isVariable)
+        {
             preview = "Variable";
+        }
         else if (meta)
+        {
             preview = meta->GetDisplayName();
+        }
         else if (!ref->component.empty())
+        {
             preview = "(missing component type)";
+        }
 
         const nlohmann::json before = PropertyRefToJson(*ref);
-        auto pickComponent = [&](const Deki::ComponentMeta* picked) {
+        auto pickComponent = [&](const Deki::ComponentMeta* picked)
+        {
             Deki::PropertyRef next = *ref;
             next.component = picked ? picked->serializedName : "";
             // The field belongs to the old component; keep it only if the new
             // one has a field by that name too.
             if (!FindComponentField(picked, next.field))
+            {
                 next.field.clear();
+            }
             commitWith(before, next);
         };
 
         if (ui.BeginCombo("##comp", preview))
         {
             if (ui.Selectable("(none)", ref->component.empty()))
+            {
                 pickComponent(nullptr);
+            }
 
             // The object's own transform, offered first: position/rotation/scale
             // are what most actions target, and every object has them.
@@ -2170,8 +2368,7 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
             // This graph's own variables, when it declares any. They live on the
             // machine rather than on an object, so the object row above is
             // irrelevant for them.
-            if (!CollectGraphVariables().empty() &&
-                ui.Selectable("Variable", isVariable) && !isVariable)
+            if (!CollectGraphVariables().empty() && ui.Selectable("Variable", isVariable) && !isVariable)
             {
                 Deki::PropertyRef next = *ref;
                 next.component = Deki::kVariableRefComponent;
@@ -2186,10 +2383,14 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
                 {
                     const Deki::ComponentMeta* m = registry.GetMeta(c->GetType());
                     if (!m)
+                    {
                         continue;
+                    }
                     const bool selected = ref->component == m->serializedName;
                     if (ui.Selectable(m->GetDisplayName(), selected) && !selected)
+                    {
                         pickComponent(m);
+                    }
                 }
             }
             else
@@ -2197,16 +2398,22 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
                 for (const Deki::ComponentMeta* m : Deki::ComponentRegistry::Instance().GetAllComponents())
                 {
                     if (!m || m->isAbstract)
+                    {
                         continue;
+                    }
                     const bool selected = ref->component == m->serializedName;
                     if (ui.Selectable(m->GetDisplayName(), selected) && !selected)
+                    {
                         pickComponent(m);
+                    }
                 }
             }
             ui.EndCombo();
         }
         if (!obj && !ref->object.empty() && ui.IsItemHovered())
+        {
             ui.SetTooltip("That object is not in the open scene, so every component type is listed");
+        }
     }
     ui.PopID();
 
@@ -2218,7 +2425,8 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         const bool isVariable = (ref->component == Deki::kVariableRefComponent);
         const nlohmann::json before = PropertyRefToJson(*ref);
 
-        auto pickField = [&](const char* fieldName) {
+        auto pickField = [&](const char* fieldName)
+        {
             Deki::PropertyRef next = *ref;
             next.field = fieldName;
             commitWith(before, next);
@@ -2234,10 +2442,14 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
                 {
                     const bool selected = ref->field == var.name;
                     if (ui.Selectable(var.name.c_str(), selected) && !selected)
+                    {
                         pickField(var.name.c_str());
+                    }
                 }
                 if (vars.empty())
+                {
                     ui.TextDisabled("This graph declares no variables");
+                }
                 ui.EndCombo();
             }
         }
@@ -2245,9 +2457,8 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
         {
             // The transform's fields come from its own table (they are not a
             // component's, see Deki::TransformFields).
-            std::string previewOwned = ref->field.empty()
-                                           ? std::string("(none)")
-                                           : EditorNaming::NicifyName(ref->field.c_str());
+            std::string previewOwned =
+                ref->field.empty() ? std::string("(none)") : EditorNaming::NicifyName(ref->field.c_str());
             if (ui.BeginCombo("##field", previewOwned.c_str()))
             {
                 int count = 0;
@@ -2257,7 +2468,9 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
                     const bool selected = ref->field == names[i];
                     const std::string display = EditorNaming::NicifyName(names[i]);
                     if (ui.Selectable(display.c_str(), selected) && !selected)
+                    {
                         pickField(names[i]);
+                    }
                 }
                 ui.EndCombo();
             }
@@ -2284,19 +2497,27 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
             if (ui.BeginCombo("##field", preview))
             {
                 bool any = false;
-                ForEachComponentField(meta, [&](const Deki::PropertyInfo& f) {
-                    // Only fields a literal can drive; asset/object refs and
-                    // arrays have no literal form.
-                    if (!IsLiteralWritable(f) || !f.name)
-                        return;
-                    any = true;
-                    const bool selected = ref->field == f.name;
-                    const std::string name = EditorNaming::GetDisplayName(f);
-                    if (ui.Selectable(name.c_str(), selected) && !selected)
-                        pickField(f.name);
-                });
+                ForEachComponentField(meta,
+                                      [&](const Deki::PropertyInfo& f)
+                                      {
+                                          // Only fields a literal can drive; asset/object refs and
+                                          // arrays have no literal form.
+                                          if (!IsLiteralWritable(f) || !f.name)
+                                          {
+                                              return;
+                                          }
+                                          any = true;
+                                          const bool selected = ref->field == f.name;
+                                          const std::string name = EditorNaming::GetDisplayName(f);
+                                          if (ui.Selectable(name.c_str(), selected) && !selected)
+                                          {
+                                              pickField(f.name);
+                                          }
+                                      });
                 if (!any)
+                {
                     ui.TextDisabled("This component has no settable fields");
+                }
                 ui.EndCombo();
             }
         }
@@ -2305,8 +2526,7 @@ void NodeGraphEditorWindow::DrawPropertyRefControl(const Deki::PropertyInfo& p, 
 }
 
 void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p, void* instance,
-                                                    const DekiNodeMeta& meta,
-                                                    const std::string& editKey,
+                                                    const DekiNodeMeta& meta, const std::string& editKey,
                                                     const CommitFn& commit)
 {
     auto& ui = EditorUI::Get();
@@ -2317,13 +2537,13 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
     // at. Either may be missing (nothing picked yet, or a component/package that
     // is no longer loaded) — then this is just a text field.
     const Deki::PropertyInfo* refProp = FindProperty(meta, p.valueOfProperty);
-    const Deki::PropertyInfo* target = nullptr;      // component field (has enum names, ranges)
+    const Deki::PropertyInfo* target = nullptr;  // component field (has enum names, ranges)
     Deki::PropertyType targetType = Deki::PropertyType::String;
     bool haveTarget = false;
     if (refProp && refProp->type == Deki::PropertyType::PropertyRef)
     {
-        const auto* ref = reinterpret_cast<const Deki::PropertyRef*>(
-            static_cast<const char*>(instance) + refProp->offset);
+        const auto* ref =
+            reinterpret_cast<const Deki::PropertyRef*>(static_cast<const char*>(instance) + refProp->offset);
 
         if (ref->component == Deki::kTransformRefComponent)
         {
@@ -2366,18 +2586,23 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
     // pattern as the rest of the panel. The stored form is always canonical
     // text so the runtime parses it once, with no type table on device.
     const nlohmann::json before = nlohmann::json(*text);
-    auto commitText = [&](const std::string& next) {
+    auto commitText = [&](const std::string& next)
+    {
         if (next != *text)
+        {
             commit(before, nlohmann::json(next));
+        }
     };
-    auto captureIfActivated = [&]() {
+    auto captureIfActivated = [&]()
+    {
         if (ui.IsItemActive() && m_EditingProperty != editKey)
         {
             m_EditingProperty = editKey;
             m_EditingOldValue = before;
         }
     };
-    auto commitOnDeactivate = [&]() {
+    auto commitOnDeactivate = [&]()
+    {
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == editKey)
         {
             commit(m_EditingOldValue, nlohmann::json(*text));
@@ -2396,9 +2621,13 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
                 char* end = nullptr;
                 v[0] = std::strtof(text->c_str(), &end);
                 while (end && (*end == ' ' || *end == ','))
+                {
                     ++end;
+                }
                 if (end)
+                {
                     v[1] = std::strtof(end, nullptr);
+                }
             }
             float innerSpacingX = 0.0f;
             ui.GetItemInnerSpacing(&innerSpacingX, nullptr);
@@ -2413,9 +2642,8 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
             captureIfActivated();
             if (changed)
             {
-                std::snprintf(buf, sizeof(buf), "%g, %g",
-                              static_cast<double>(v[0]), static_cast<double>(v[1]));
-                *text = buf;   // live preview
+                std::snprintf(buf, sizeof(buf), "%g, %g", static_cast<double>(v[0]), static_cast<double>(v[1]));
+                *text = buf;  // live preview
             }
             commitOnDeactivate();
             break;
@@ -2424,7 +2652,9 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
         {
             bool v = (*text == "true" || *text == "1");
             if (ui.Checkbox("##v", &v))
+            {
                 commitText(v ? "true" : "false");
+            }
             break;
         }
         case Deki::PropertyType::Enum:
@@ -2434,15 +2664,17 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
             // (the transform has no enum fields), so this needs `target`.
             const int currentIndex = std::atoi(text->c_str());
             const int enumCount = target ? target->enumCount : 0;
-            const char* preview = (target && currentIndex >= 0 && currentIndex < enumCount)
-                                      ? target->enumValues[currentIndex] : "(none)";
+            const char* preview =
+                (target && currentIndex >= 0 && currentIndex < enumCount) ? target->enumValues[currentIndex] : "(none)";
             if (ui.BeginCombo("##v", preview))
             {
                 for (int e = 0; e < enumCount; ++e)
                 {
                     const bool selected = e == currentIndex;
                     if (ui.Selectable(target->enumValues[e], selected) && !selected)
+                    {
                         commitText(std::to_string(e));
+                    }
                 }
                 ui.EndCombo();
             }
@@ -2454,31 +2686,35 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
             // Ranges only exist on component fields; a transform target has none.
             const bool ranged = target && target->hasRange;
             float v = static_cast<float>(std::atof(text->c_str()));
-            const bool changed = ui.DragFloat("##v", &v, 0.05f,
-                                              ranged ? target->minValue : 0.0f,
-                                              ranged ? target->maxValue : 0.0f);
+            const bool changed =
+                ui.DragFloat("##v", &v, 0.05f, ranged ? target->minValue : 0.0f, ranged ? target->maxValue : 0.0f);
             captureIfActivated();
             if (changed)
             {
                 std::snprintf(buf, sizeof(buf), "%g", static_cast<double>(v));
-                *text = buf;   // live preview
+                *text = buf;  // live preview
             }
             commitOnDeactivate();
             break;
         }
-        case Deki::PropertyType::Int8:   case Deki::PropertyType::Int16:
-        case Deki::PropertyType::Int32:  case Deki::PropertyType::Int64:
-        case Deki::PropertyType::UInt8:  case Deki::PropertyType::UInt16:
-        case Deki::PropertyType::UInt32: case Deki::PropertyType::UInt64:
+        case Deki::PropertyType::Int8:
+        case Deki::PropertyType::Int16:
+        case Deki::PropertyType::Int32:
+        case Deki::PropertyType::Int64:
+        case Deki::PropertyType::UInt8:
+        case Deki::PropertyType::UInt16:
+        case Deki::PropertyType::UInt32:
+        case Deki::PropertyType::UInt64:
         {
             const bool ranged = target && target->hasRange;
             int v = std::atoi(text->c_str());
-            const bool changed = ui.DragInt("##v", &v, 0.2f,
-                                            ranged ? static_cast<int>(target->minValue) : 0,
+            const bool changed = ui.DragInt("##v", &v, 0.2f, ranged ? static_cast<int>(target->minValue) : 0,
                                             ranged ? static_cast<int>(target->maxValue) : 0);
             captureIfActivated();
             if (changed)
-                *text = std::to_string(v);   // live preview
+            {
+                *text = std::to_string(v);  // live preview
+            }
             commitOnDeactivate();
             break;
         }
@@ -2488,14 +2724,18 @@ void NodeGraphEditorWindow::DrawTypedLiteralControl(const Deki::PropertyInfo& p,
             const bool changed = ui.InputText("##v", buf, sizeof(buf));
             captureIfActivated();
             if (changed)
-                *text = buf;   // live preview
+            {
+                *text = buf;  // live preview
+            }
             commitOnDeactivate();
             break;
         }
     }
 
     if (!haveTarget && ui.IsItemHovered())
+    {
         ui.SetTooltip("Pick a component and field above to get a typed editor here");
+    }
 }
 
 void NodeGraphEditorWindow::DrawPropertyWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p)
@@ -2504,24 +2744,23 @@ void NodeGraphEditorWindow::DrawPropertyWidget(NodeGraphDocNode& node, const Dek
     const std::string propName = p.name;
     auto doc = m_Doc;
     DrawPropertyControl(node.instance, *node.meta, p, propName, node.id,
-        [doc, nodeId, propName](const nlohmann::json& oldV, const nlohmann::json& newV) {
-            CommandHistory::Instance().ExecuteNoMerge(std::make_unique<SetNodePropertyCommand>(
-                doc, nodeId, propName, oldV, newV));
-        });
+                        [doc, nodeId, propName](const nlohmann::json& oldV, const nlohmann::json& newV)
+                        {
+                            CommandHistory::Instance().ExecuteNoMerge(
+                                std::make_unique<SetNodePropertyCommand>(doc, nodeId, propName, oldV, newV));
+                        });
 }
 
 void NodeGraphEditorWindow::DrawWeightsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p)
 {
     auto& ui = EditorUI::Get();
-    auto* weights = reinterpret_cast<std::vector<float>*>(
-        static_cast<char*>(node.instance) + p.offset);
+    auto* weights = reinterpret_cast<std::vector<float>*>(static_cast<char*>(node.instance) + p.offset);
 
     // Grouped like the transitions list: its own band with the pin count, its
     // rows bounded by the separators either side.
     const std::string sectionLabel = EditorNaming::GetDisplayName(p);
     char band[128];
-    std::snprintf(band, sizeof(band), "%s  (%d)###ng_dynout", sectionLabel.c_str(),
-                  static_cast<int>(weights->size()));
+    std::snprintf(band, sizeof(band), "%s  (%d)###ng_dynout", sectionLabel.c_str(), static_cast<int>(weights->size()));
 
     // Separator, band, rows: the exact rhythm a component section has in the
     // Inspector. No extra Spacing() under the band — the band already charges a
@@ -2529,7 +2768,9 @@ void NodeGraphEditorWindow::DrawWeightsWidget(NodeGraphDocNode& node, const Deki
     // twice the air everything else does.
     ui.FullBleedSeparator();
     if (!SchematicSectionBegin(band))
+    {
         return;
+    }
 
     // Deferred like the transitions list: the remove command rewrites the very
     // vector being iterated here.
@@ -2555,7 +2796,9 @@ void NodeGraphEditorWindow::DrawWeightsWidget(NodeGraphDocNode& node, const Deki
             m_EditingOldValue = *weights;
         }
         if (changed)
-            (*weights)[i] = v;   // live preview
+        {
+            (*weights)[i] = v;  // live preview
+        }
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == p.name)
         {
             CommandHistory::Instance().ExecuteNoMerge(std::make_unique<SetNodePropertyCommand>(
@@ -2569,20 +2812,23 @@ void NodeGraphEditorWindow::DrawWeightsWidget(NodeGraphDocNode& node, const Deki
         // only shows under the cursor, so a list of them does not read as a
         // column of warnings.
         ui.SameLine(0.0f, rmGap);
-        ui.PushStyleColor(EditorUI::Col::Text,          PackPalette(Palette::Red, 0.80f));
+        ui.PushStyleColor(EditorUI::Col::Text, PackPalette(Palette::Red, 0.80f));
         ui.PushStyleColor(EditorUI::Col::ButtonHovered, PackPalette(Palette::Red, 0.18f));
-        ui.PushStyleColor(EditorUI::Col::ButtonActive,  PackPalette(Palette::Red, 0.30f));
+        ui.PushStyleColor(EditorUI::Col::ButtonActive, PackPalette(Palette::Red, 0.30f));
         const bool remove = ui.Button(ICON_TI_X "##rm", rowH);
         ui.PopStyleColor(3);
         if (remove)
         {
-            pendingRemove = [this, id = node.id, prop = std::string(p.name), index]() {
+            pendingRemove = [this, id = node.id, prop = std::string(p.name), index]()
+            {
                 CommandHistory::Instance().ExecuteNoMerge(
                     std::make_unique<RemoveDynamicOutputCommand>(m_Doc, id, prop, index, "output"));
             };
         }
         if (ui.IsItemHovered())
+        {
             ui.SetTooltip("Remove this output");
+        }
         ui.PopID();
     }
 
@@ -2592,22 +2838,23 @@ void NodeGraphEditorWindow::DrawWeightsWidget(NodeGraphDocNode& node, const Deki
     {
         std::vector<float> next = *weights;
         next.push_back(1.0f);
-        CommandHistory::Instance().ExecuteNoMerge(std::make_unique<SetWeightCountCommand>(
-            m_Doc, node.id, p.name, *weights, std::move(next)));
+        CommandHistory::Instance().ExecuteNoMerge(
+            std::make_unique<SetWeightCountCommand>(m_Doc, node.id, p.name, *weights, std::move(next)));
     }
 
     ui.FullBleedSeparator();
     SchematicSectionEnd();
 
     if (pendingRemove)
+    {
         pendingRemove();
+    }
 }
 
 void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p)
 {
     auto& ui = EditorUI::Get();
-    auto* events = reinterpret_cast<std::vector<std::string>*>(
-        static_cast<char*>(node.instance) + p.offset);
+    auto* events = reinterpret_cast<std::vector<std::string>*>(static_cast<char*>(node.instance) + p.offset);
 
     // Both labels come from the property itself, so a state's `transitions`
     // heads a "Transitions" section of "Transition 1..N" rows and a group's
@@ -2616,14 +2863,15 @@ void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const 
     const std::string sectionLabel = EditorNaming::GetDisplayName(p);
     std::string rowLabel = sectionLabel;
     if (rowLabel.size() > 1 && rowLabel.back() == 's')
+    {
         rowLabel.pop_back();
+    }
 
     // A list is its own inspector section, not loose rows among the node's
     // settings: own band, own count, its rows bounded by the separators either
     // side. The "###" id keeps it open while the count in the label changes.
     char band[128];
-    std::snprintf(band, sizeof(band), "%s  (%d)###ng_dynout", sectionLabel.c_str(),
-                  static_cast<int>(events->size()));
+    std::snprintf(band, sizeof(band), "%s  (%d)###ng_dynout", sectionLabel.c_str(), static_cast<int>(events->size()));
 
     // Separator, band, rows: the exact rhythm a component section has in the
     // Inspector. No extra Spacing() under the band — the band already charges a
@@ -2631,7 +2879,9 @@ void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const 
     // twice the air everything else does.
     ui.FullBleedSeparator();
     if (!SchematicSectionBegin(band))
+    {
         return;
+    }
 
     // Each entry is one output pin, labeled by its own value. Renames commit in
     // place (pin count unchanged); each row carries its own remove button, so a
@@ -2669,7 +2919,9 @@ void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const 
             m_EditingOldValue = *events;
         }
         if (changed)
-            (*events)[i] = buf;   // live preview (pin label follows)
+        {
+            (*events)[i] = buf;  // live preview (pin label follows)
+        }
         if (ui.IsItemDeactivatedAfterEdit() && m_EditingProperty == editKey)
         {
             CommandHistory::Instance().ExecuteNoMerge(std::make_unique<SetNodePropertyCommand>(
@@ -2681,26 +2933,30 @@ void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const 
         // only shows under the cursor, so a list of them does not read as a
         // column of warnings.
         ui.SameLine(0.0f, rmGap);
-        ui.PushStyleColor(EditorUI::Col::Text,          PackPalette(Palette::Red, 0.80f));
+        ui.PushStyleColor(EditorUI::Col::Text, PackPalette(Palette::Red, 0.80f));
         ui.PushStyleColor(EditorUI::Col::ButtonHovered, PackPalette(Palette::Red, 0.18f));
-        ui.PushStyleColor(EditorUI::Col::ButtonActive,  PackPalette(Palette::Red, 0.30f));
+        ui.PushStyleColor(EditorUI::Col::ButtonActive, PackPalette(Palette::Red, 0.30f));
         const bool remove = ui.Button(ICON_TI_X "##rm", rowH);
         ui.PopStyleColor(3);
         if (remove)
         {
-            pendingRemove = [this, id = node.id, prop = std::string(p.name), index,
-                             rowName = rowLabel]() {
+            pendingRemove = [this, id = node.id, prop = std::string(p.name), index, rowName = rowLabel]()
+            {
                 CommandHistory::Instance().ExecuteNoMerge(
                     std::make_unique<RemoveDynamicOutputCommand>(m_Doc, id, prop, index, rowName));
             };
         }
         if (ui.IsItemHovered())
+        {
             ui.SetTooltip("Remove this output pin, and the wire leaving it");
+        }
         ui.PopID();
     }
 
     if (events->empty())
+    {
         ui.TextDisabled("No output pins.");
+    }
 
     // The editor's shared "add one more" affordance: centered, outlined, quiet
     // until hovered — the same box the Inspector ends its component list with.
@@ -2719,7 +2975,9 @@ void NodeGraphEditorWindow::DrawTransitionsWidget(NodeGraphDocNode& node, const 
     SchematicSectionEnd();
 
     if (pendingRemove)
+    {
         pendingRemove();
+    }
 }
 
 void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
@@ -2737,7 +2995,9 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
     // each side, which floated a short line in a block of air above the header.
     ui.FullBleedSeparator();
     if (!SchematicSectionBegin(sectionLabel.c_str()))
+    {
         return;
+    }
 
     // Structural edits (add/remove/reorder) are deferred to after the loop:
     // commands mutate node.children immediately, which would invalidate the
@@ -2757,10 +3017,9 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
         // right end. The "###e" id keeps the open/closed state with the SLOT,
         // so collapsed entries don't shuffle when the stack is reordered.
         char title[192];
-        std::snprintf(title, sizeof(title), "%d. %s###e", index + 1,
-                      NodeDisplayName(child.meta).c_str());
-        const bool open = SchematicSectionBegin(
-            title, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+        std::snprintf(title, sizeof(title), "%d. %s###e", index + 1, NodeDisplayName(child.meta).c_str());
+        const bool open =
+            SchematicSectionBegin(title, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
         ui.OpenPopupOnItemClick("##ng_entrymenu");
 
         // Band controls, laid out right to left (SchematicActionLink's trick:
@@ -2776,8 +3035,8 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             ui.GetItemInnerSpacing(&innerSpacingX, nullptr);
             float availW = 0.0f;
             ui.GetContentRegionAvail(&availW, nullptr);
-            const float slotH  = ui.GetFrameHeight();
-            const float top    = bandMinY + (bandMaxY - bandMinY - slotH) * 0.5f;
+            const float slotH = ui.GetFrameHeight();
+            const float top = bandMinY + (bandMaxY - bandMinY - slotH) * 0.5f;
             // Right content edge (before the scrollbar), one frame padding in
             // from the seam — the same anchor SchematicActionLink uses.
             float right = afterBandX + availW - framePaddingX;
@@ -2785,7 +3044,9 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             right -= slotH;
             ui.SetCursorScreenPos(right, top);
             if (ui.Button(ICON_TI_DOTS_VERTICAL "##menu", slotH))
+            {
                 ui.OpenPopup("##ng_entrymenu");
+            }
 
             // The bare styled checkbox is only its box wide (font * 1.2) while
             // still reserving a full frame height of row, like the inspector's.
@@ -2795,13 +3056,16 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             bool enabled = child.enabled;
             if (ui.Checkbox("##en", &enabled))
             {
-                pendingOp = [this, id = node.id, index, enabled]() {
+                pendingOp = [this, id = node.id, index, enabled]()
+                {
                     CommandHistory::Instance().ExecuteNoMerge(
                         std::make_unique<SetChildEnabledCommand>(m_Doc, id, index, enabled));
                 };
             }
             if (ui.IsItemHovered())
+            {
                 ui.SetTooltip(child.enabled ? "Enabled (skipped when off)" : "Disabled");
+            }
 
             ui.SetCursorScreenPos(afterBandX, afterBandY);
         }
@@ -2813,21 +3077,24 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             PushContextMenuItemStyle();
             if (ui.MenuItem("Move Up", index > 0))
             {
-                pendingOp = [this, id = node.id, index]() {
+                pendingOp = [this, id = node.id, index]()
+                {
                     CommandHistory::Instance().ExecuteNoMerge(
                         std::make_unique<MoveChildCommand>(m_Doc, id, index, index - 1));
                 };
             }
             if (ui.MenuItem("Move Down", index < lastIndex))
             {
-                pendingOp = [this, id = node.id, index]() {
+                pendingOp = [this, id = node.id, index]()
+                {
                     CommandHistory::Instance().ExecuteNoMerge(
                         std::make_unique<MoveChildCommand>(m_Doc, id, index, index + 1));
                 };
             }
             if (ui.MenuItem(child.enabled ? "Disable" : "Enable"))
             {
-                pendingOp = [this, id = node.id, index, on = !child.enabled]() {
+                pendingOp = [this, id = node.id, index, on = !child.enabled]()
+                {
                     CommandHistory::Instance().ExecuteNoMerge(
                         std::make_unique<SetChildEnabledCommand>(m_Doc, id, index, on));
                 };
@@ -2835,15 +3102,13 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             ui.Separator();
             if (ui.MenuItem("Remove"))
             {
-                pendingOp = [this, id = node.id, index]() {
-                    CommandHistory::Instance().ExecuteNoMerge(
-                        std::make_unique<RemoveChildCommand>(m_Doc, id, index));
-                };
+                pendingOp = [this, id = node.id, index]()
+                { CommandHistory::Instance().ExecuteNoMerge(std::make_unique<RemoveChildCommand>(m_Doc, id, index)); };
             }
-            ui.PopStyleVar();       // ItemSpacing (PushContextMenuItemStyle)
+            ui.PopStyleVar();  // ItemSpacing (PushContextMenuItemStyle)
             ui.EndPopup();
         }
-        ui.PopStyleVar();           // WindowPadding (PushContextMenuPopupStyle)
+        ui.PopStyleVar();  // WindowPadding (PushContextMenuPopupStyle)
 
         // The child's reflected properties, committed against (node, index).
         if (open)
@@ -2853,22 +3118,23 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
             {
                 const Deki::PropertyInfo& p = child.meta->properties[pi];
                 ui.PushID(p.name);
-                const std::string editKey =
-                    "child#" + std::to_string(i) + ":" + p.name;
+                const std::string editKey = "child#" + std::to_string(i) + ":" + p.name;
                 const uint32_t nodeId = node.id;
                 auto doc = m_Doc;
                 const std::string propName = p.name;
-                DrawPropertyControl(child.instance, *child.meta, p, editKey, node.id,
-                    [doc, nodeId, index, propName](const nlohmann::json& oldV,
-                                                   const nlohmann::json& newV) {
+                DrawPropertyControl(
+                    child.instance, *child.meta, p, editKey, node.id,
+                    [doc, nodeId, index, propName](const nlohmann::json& oldV, const nlohmann::json& newV)
+                    {
                         CommandHistory::Instance().ExecuteNoMerge(
-                            std::make_unique<SetChildPropertyCommand>(
-                                doc, nodeId, index, propName, oldV, newV));
+                            std::make_unique<SetChildPropertyCommand>(doc, nodeId, index, propName, oldV, newV));
                     });
                 ui.PopID();
             }
             if (child.meta->propertyCount == 0)
+            {
                 ui.TextDisabled("No settings");
+            }
             ui.Spacing();
             SchematicSectionEnd();
         }
@@ -2882,7 +3148,9 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
     // than a small button with a typed "+" for a glyph.
     const std::string addLabel = std::string(ICON_TI_PLUS "  Add ") + sectionLabel;
     if (SchematicAddButton(addLabel.c_str(), 160.0f * ui.GetDpiScale()))
+    {
         ui.OpenPopup("##ng_addchild");
+    }
 
     // The editor's shared picker, the same one Add Component opens: a title, a
     // search that ranks best-first, and full keyboard control. A stack's types
@@ -2900,10 +3168,12 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
         for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
         {
             if (!meta->category || std::strcmp(meta->category, cat) != 0)
+            {
                 continue;
+            }
             metas.push_back(meta);
             PickerItem item;
-            item.label   = meta->displayName && meta->displayName[0] ? meta->displayName : meta->name;
+            item.label = meta->displayName && meta->displayName[0] ? meta->displayName : meta->name;
             item.altName = meta->name;
             // What it DOES, on the row's second line. A stack of a dozen actions
             // with names like "Set Bool" and "Set Bool Value" is exactly the
@@ -2913,18 +3183,17 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
         }
 
         const std::string title = "Add " + sectionLabel;
-        const std::string hint  = "Search " + sectionLabel;
-        const int chosen = SchematicPicker("##ng_addchild_picker", title.c_str(),
-                                           picks.data(), static_cast<int>(picks.size()),
-                                           m_AddChildJustOpened, 320.0f * ui.GetDpiScale(),
-                                           ICON_TI_BOLT, hint.c_str(),
-                                           "No types registered for this stack");
+        const std::string hint = "Search " + sectionLabel;
+        const int chosen = SchematicPicker(
+            "##ng_addchild_picker", title.c_str(), picks.data(), static_cast<int>(picks.size()), m_AddChildJustOpened,
+            320.0f * ui.GetDpiScale(), ICON_TI_BOLT, hint.c_str(), "No types registered for this stack");
         m_AddChildJustOpened = false;
 
         if (chosen >= 0 && chosen < static_cast<int>(metas.size()))
         {
-            pendingOp = [this, id = node.id, typeId = metas[chosen]->typeId,
-                         typeName = std::string(metas[chosen]->name)]() {
+            pendingOp =
+                [this, id = node.id, typeId = metas[chosen]->typeId, typeName = std::string(metas[chosen]->name)]()
+            {
                 CommandHistory::Instance().ExecuteNoMerge(
                     std::make_unique<AddChildCommand>(m_Doc, id, typeId, typeName));
             };
@@ -2934,22 +3203,25 @@ void NodeGraphEditorWindow::DrawChildStack(NodeGraphDocNode& node)
     }
     else
     {
-        m_AddChildJustOpened = true;   // focus the search again on the next open
+        m_AddChildJustOpened = true;  // focus the search again on the next open
     }
-    ui.PopStyleVar();           // WindowPadding (PushContextMenuPopupStyle)
+    ui.PopStyleVar();  // WindowPadding (PushContextMenuPopupStyle)
 
     SchematicSectionEnd();
 
     if (pendingOp)
+    {
         pendingOp();
+    }
 }
 
-std::vector<NodeGraphEditorWindow::GraphVariable>
-NodeGraphEditorWindow::CollectGraphVariables() const
+std::vector<NodeGraphEditorWindow::GraphVariable> NodeGraphEditorWindow::CollectGraphVariables() const
 {
     std::vector<GraphVariable> out;
     if (!m_Doc)
+    {
         return out;
+    }
 
     // Generic: any node type marked DEKI_NODE_VARIABLES declares them through
     // its child stack. Each child's title property is the name, and its first
@@ -2959,12 +3231,16 @@ NodeGraphEditorWindow::CollectGraphVariables() const
     for (const NodeGraphDocNode& node : m_Doc->root.nodes)
     {
         if (!node.meta || !node.meta->declaresVariables)
+        {
             continue;
+        }
 
         for (const NodeGraphDocChild& child : node.children)
         {
             if (!child.meta || !child.instance || !child.meta->titleProperty)
+            {
                 continue;
+            }
 
             GraphVariable var;
             bool haveType = false;
@@ -2973,8 +3249,8 @@ NodeGraphEditorWindow::CollectGraphVariables() const
                 const Deki::PropertyInfo& p = child.meta->properties[i];
                 if (std::strcmp(p.name, child.meta->titleProperty) == 0)
                 {
-                    var.name = *reinterpret_cast<const std::string*>(
-                        static_cast<const char*>(child.instance) + p.offset);
+                    var.name =
+                        *reinterpret_cast<const std::string*>(static_cast<const char*>(child.instance) + p.offset);
                 }
                 else if (!haveType)
                 {
@@ -2983,7 +3259,9 @@ NodeGraphEditorWindow::CollectGraphVariables() const
                 }
             }
             if (!var.name.empty() && haveType)
+            {
                 out.push_back(std::move(var));
+            }
         }
     }
     return out;
@@ -2997,10 +3275,12 @@ std::string NodeGraphEditorWindow::NodeTitle(const NodeGraphDocNode& node) const
         {
             if (p->type == Deki::PropertyType::String)
             {
-                const auto* s = reinterpret_cast<const std::string*>(
-                    static_cast<const char*>(node.instance) + p->offset);
+                const auto* s =
+                    reinterpret_cast<const std::string*>(static_cast<const char*>(node.instance) + p->offset);
                 if (!s->empty())
+                {
                     return *s;
+                }
             }
         }
     }
@@ -3028,14 +3308,14 @@ void NodeGraphEditorWindow::DrawModals()
 
     if (BeginSchematicModal("Unsaved Graph Changes", 420.0f))
     {
-        const std::string name = m_Doc
-            ? std::filesystem::path(m_Doc->assetPath).filename().string() : "";
+        const std::string name = m_Doc ? std::filesystem::path(m_Doc->assetPath).filename().string() : "";
         char msg[512];
         std::snprintf(msg, sizeof(msg), "'%s' has unsaved changes.", name.c_str());
         ui.Text(msg);
         ui.Spacing();
 
-        auto proceed = [this]() {
+        auto proceed = [this]()
+        {
             if (m_ConfirmAction == ConfirmAction::OpenPending)
             {
                 std::string error;
@@ -3058,8 +3338,9 @@ void NodeGraphEditorWindow::DrawModals()
 
         // The editor's dialog row: Cancel, then the destructive Discard, then
         // Save as the primary action.
-        const int choice = DekiEditor::SchematicDialogButtons(
-            { { "Cancel" }, { "Discard", DekiEditor::DialogButton::Danger }, { "Save", DekiEditor::DialogButton::Primary } });
+        const int choice = DekiEditor::SchematicDialogButtons({ { "Cancel" },
+                                                                { "Discard", DekiEditor::DialogButton::Danger },
+                                                                { "Save", DekiEditor::DialogButton::Primary } });
         if (choice == 2)
         {
             SaveDocument();
@@ -3116,7 +3397,7 @@ bool NodeGraphEditorWindow::SaveSession(std::string& outJson)
         s["panY"] = m_Canvas.GetPanY();
         s["zoom"] = m_Canvas.GetZoom();
         s["selectedNode"] = m_SelectedNode;
-        s["graphPath"] = m_GraphPath;   // stay inside the state you were editing
+        s["graphPath"] = m_GraphPath;  // stay inside the state you were editing
     }
     outJson = s.dump();
     return true;
@@ -3135,7 +3416,9 @@ void NodeGraphEditorWindow::RestoreSession(const std::string& json)
     }
 
     if (!s.contains("assetPath"))
-        return;   // was open without a document
+    {
+        return;  // was open without a document
+    }
 
     const nlohmann::json docJson = s.value("doc", nlohmann::json::object());
     const std::string assetType = docJson.value("type", "");
@@ -3144,7 +3427,9 @@ void NodeGraphEditorWindow::RestoreSession(const std::string& json)
     auto doc = std::make_shared<NodeGraphDocument>();
     std::string error;
     if (!domain)
+    {
         error = "'" + assetType + "' is no longer a registered node graph type";
+    }
     else
     {
         doc->domain = domain;
@@ -3170,7 +3455,7 @@ void NodeGraphEditorWindow::RestoreSession(const std::string& json)
     m_SelectedNode = s.value("selectedNode", 0u);
     m_SelectedLink = -1;
     m_GraphPath = s.value("graphPath", std::vector<uint32_t>{});
-    ValidateGraphPath();   // node types can vanish across a reload
+    ValidateGraphPath();  // node types can vanish across a reload
     EnsurePermanentNodes();
     m_Canvas.SetView(s.value("panX", 0.0f), s.value("panY", 0.0f), s.value("zoom", 1.0f));
 }
@@ -3184,4 +3469,4 @@ void NodeGraphEditorWindow::RestoreSession(const std::string& json)
 // DLLs, so this static registrar always reruns when it needs to.
 REGISTER_EDITOR_WINDOW(NodeGraphEditorWindow, "Node Graph", "Tools/Node Graph")
 
-} // namespace DekiEditor
+}  // namespace DekiEditor

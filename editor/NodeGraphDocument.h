@@ -31,8 +31,14 @@
 #include <string>
 #include <vector>
 
-namespace DekiNodeGraph { struct DekiNodeMeta; }
-namespace DekiNodeGraph { struct DekiNodeGraphDomain; }
+namespace DekiNodeGraph
+{
+struct DekiNodeMeta;
+}
+namespace DekiNodeGraph
+{
+struct DekiNodeGraphDomain;
+}
 namespace DekiEditor
 {
 
@@ -43,7 +49,7 @@ namespace DekiEditor
 struct NodeGraphDocChild
 {
     const DekiNodeGraph::DekiNodeMeta* meta = nullptr;
-    void* instance = nullptr;    // meta->createFunc(); owned by the document
+    void* instance = nullptr;  // meta->createFunc(); owned by the document
     bool enabled = true;
 };
 
@@ -53,9 +59,9 @@ struct NodeGraphDocNode
 {
     uint32_t id = 0;
     const DekiNodeGraph::DekiNodeMeta* meta = nullptr;
-    void* instance = nullptr;    // meta->createFunc(); owned by the document
-    float x = 0.0f, y = 0.0f;    // canvas layout (graph units)
-    std::vector<NodeGraphDocChild> children;   // ordered child stack (may be empty)
+    void* instance = nullptr;                 // meta->createFunc(); owned by the document
+    float x = 0.0f, y = 0.0f;                 // canvas layout (graph units)
+    std::vector<NodeGraphDocChild> children;  // ordered child stack (may be empty)
     // Inner graph of a DEKI_NODE_SUBGRAPH node (owned by the document, freed by
     // DestroyInstances). nullptr for an ordinary flat node.
     NodeGraphDocGraph* inner = nullptr;
@@ -70,8 +76,7 @@ struct NodeGraphDocLink
 
     bool operator==(const NodeGraphDocLink& o) const
     {
-        return fromNode == o.fromNode && fromPin == o.fromPin &&
-               toNode == o.toNode && toPin == o.toPin;
+        return fromNode == o.fromNode && fromPin == o.fromPin && toNode == o.toNode && toPin == o.toPin;
     }
 };
 
@@ -93,7 +98,7 @@ public:
     const DekiNodeGraph::DekiNodeGraphDomain* domain = nullptr;
 
     NodeGraphDocGraph root;
-    uint32_t nextNodeId = 1;   // document-wide: ids are unique across all levels
+    uint32_t nextNodeId = 1;  // document-wide: ids are unique across all levels
     bool dirty = false;
 
     // ---- Graph lookup ----
@@ -123,8 +128,8 @@ public:
     // `ownerNodeId`'s graph. Bumps nextNodeId past `id` if needed. Returns
     // false on unknown type or bad values (logged). Does NOT seed a subgraph
     // entry: the caller restores the exact inner graph via NodeFromJson.
-    bool AddNodeWithId(uint32_t id, const std::string& typeName, float x, float y,
-                       const nlohmann::json& values, uint32_t ownerNodeId = 0);
+    bool AddNodeWithId(uint32_t id, const std::string& typeName, float x, float y, const nlohmann::json& values,
+                       uint32_t ownerNodeId = 0);
 
     // Remove a node and every link touching it in ITS graph. An inner graph is
     // destroyed with it (recursively). Returns false if absent.
@@ -160,8 +165,8 @@ public:
     int AddChild(uint32_t nodeId, uint32_t childTypeId, int index);
 
     // Undo/redo restore: recreate one child with explicit values + enabled.
-    bool AddChildFromJson(uint32_t nodeId, int index, const std::string& typeName,
-                          const nlohmann::json& values, bool enabled);
+    bool AddChildFromJson(uint32_t nodeId, int index, const std::string& typeName, const nlohmann::json& values,
+                          bool enabled);
 
     bool RemoveChild(uint32_t nodeId, int index);
     bool MoveChild(uint32_t nodeId, int from, int to);
@@ -204,4 +209,4 @@ public:
     void DestroyInstances();
 };
 
-} // namespace DekiEditor
+}  // namespace DekiEditor

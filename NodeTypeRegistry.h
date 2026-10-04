@@ -25,11 +25,10 @@ namespace DekiNodeGraph
  * teardown so no stale meta pointers survive FreeLibrary.
  */
 
-
-
 struct DekiNodeMeta;  // full definition in deki-nodegraph/DekiNode.h
 
-class DEKI_NODEGRAPH_API NodeTypeRegistry {
+class DEKI_NODEGRAPH_API NodeTypeRegistry
+{
 public:
     static NodeTypeRegistry& Instance();
 
@@ -80,6 +79,6 @@ private:
     std::string m_MismatchDetail;
 };
 
-#endif // DEKI_EDITOR
+#endif  // DEKI_EDITOR
 
 }  // namespace DekiNodeGraph

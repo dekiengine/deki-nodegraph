@@ -20,55 +20,66 @@
 #include <cstddef>
 #include <unordered_map>
 
-namespace Deki::SceneFormat { class SceneMsgPackParser; }
+namespace Deki::SceneFormat
+{
+class SceneMsgPackParser;
+}
 
 namespace DekiNodeGraph
 {
 
-namespace SceneFormat {
+namespace SceneFormat
+{
 
+using NodeCreateFn = void* (*)();
+using NodeDeserializeFn = bool (*)(void* node, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize);
+using NodeDestroyFn = void (*)(void* node);
 
-using NodeCreateFn      = void* (*)();
-using NodeDeserializeFn = bool  (*)(void* node, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize);
-using NodeDestroyFn     = void  (*)(void* node);
-
-struct NodeFactoryEntry {
-    NodeCreateFn      create      = nullptr;
+struct NodeFactoryEntry
+{
+    NodeCreateFn create = nullptr;
     NodeDeserializeFn deserialize = nullptr;
-    NodeDestroyFn     destroy     = nullptr;
+    NodeDestroyFn destroy = nullptr;
 };
 
 /**
  * @brief Hash-map factory for node types. O(1) lookup by type id (name hash).
  */
-class DEKI_NODEGRAPH_API NodeFactory {
+class DEKI_NODEGRAPH_API NodeFactory
+{
 public:
     static NodeFactory& Instance();
 
-    void Register(uint32_t typeId, NodeCreateFn create,
-                  NodeDeserializeFn deserialize, NodeDestroyFn destroy) {
+    void Register(uint32_t typeId, NodeCreateFn create, NodeDeserializeFn deserialize, NodeDestroyFn destroy)
+    {
         m_Entries[typeId] = { create, deserialize, destroy };
     }
 
     void Unregister(uint32_t typeId) { m_Entries.erase(typeId); }
 
     // Create a default-constructed node of the given type, or nullptr if unknown.
-    void* Create(uint32_t typeId) {
+    void* Create(uint32_t typeId)
+    {
         auto it = m_Entries.find(typeId);
         return (it != m_Entries.end() && it->second.create) ? it->second.create() : nullptr;
     }
 
     // Deserialize `node` (a pointer from Create) from a MessagePack map. Returns
     // false if the type is unknown or has no deserialize thunk.
-    bool Deserialize(uint32_t typeId, void* node, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize) {
+    bool Deserialize(uint32_t typeId, void* node, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize)
+    {
         auto it = m_Entries.find(typeId);
-        return (it != m_Entries.end() && it->second.deserialize)
-            ? it->second.deserialize(node, parser, mapSize) : false;
+        return (it != m_Entries.end() && it->second.deserialize) ? it->second.deserialize(node, parser, mapSize)
+                                                                 : false;
     }
 
-    void Destroy(uint32_t typeId, void* node) {
+    void Destroy(uint32_t typeId, void* node)
+    {
         auto it = m_Entries.find(typeId);
-        if (it != m_Entries.end() && it->second.destroy) it->second.destroy(node);
+        if (it != m_Entries.end() && it->second.destroy)
+        {
+            it->second.destroy(node);
+        }
     }
 
     bool IsRegistered(uint32_t typeId) const { return m_Entries.count(typeId) > 0; }
@@ -82,6 +93,6 @@ private:
     std::unordered_map<uint32_t, NodeFactoryEntry> m_Entries;
 };
 
-} // namespace SceneFormat
+}  // namespace SceneFormat
 
 }  // namespace DekiNodeGraph

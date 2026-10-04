@@ -30,35 +30,39 @@ namespace DekiNodeGraph
  * screen pixels and the window has already clipped to the preview rect.
  */
 
-
 struct NodeGraphPreviewNode
 {
     uint32_t id = 0;
     uint32_t typeId = 0;
-    void*    instance = nullptr;   // live node struct, owned by the document
+    void* instance = nullptr;  // live node struct, owned by the document
 };
 
 struct NodeGraphPreviewLink
 {
     uint32_t fromNode = 0;
-    int32_t  fromPin = 0;
+    int32_t fromPin = 0;
     uint32_t toNode = 0;
-    int32_t  toPin = 0;
+    int32_t toPin = 0;
 };
 
 // One graph level, borrowed for the duration of the Tick call. Never stored.
 struct NodeGraphPreviewGraph
 {
     const NodeGraphPreviewNode* nodes = nullptr;
-    int                         nodeCount = 0;
+    int nodeCount = 0;
     const NodeGraphPreviewLink* links = nullptr;
-    int                         linkCount = 0;
+    int linkCount = 0;
 
     // The first node of `typeId`, or nullptr. Mirrors NodeGraphData::Graph.
     const NodeGraphPreviewNode* FindFirstOfType(uint32_t typeId) const
     {
         for (int i = 0; i < nodeCount; ++i)
-            if (nodes[i].typeId == typeId) return &nodes[i];
+        {
+            if (nodes[i].typeId == typeId)
+            {
+                return &nodes[i];
+            }
+        }
         return nullptr;
     }
 
@@ -67,9 +71,17 @@ struct NodeGraphPreviewGraph
     {
         for (int i = 0; i < linkCount; ++i)
         {
-            if (links[i].fromNode != nodeId || links[i].fromPin != fromPin) continue;
+            if (links[i].fromNode != nodeId || links[i].fromPin != fromPin)
+            {
+                continue;
+            }
             for (int n = 0; n < nodeCount; ++n)
-                if (nodes[n].id == links[i].toNode) return &nodes[n];
+            {
+                if (nodes[n].id == links[i].toNode)
+                {
+                    return &nodes[n];
+                }
+            }
         }
         return nullptr;
     }
@@ -80,8 +92,8 @@ struct NodeGraphPreviewGraph
 // use this rather than shifting by hand.
 inline uint32_t NodeGraphPreviewRgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
 {
-    return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) |
-           (static_cast<uint32_t>(g) << 8)  |  static_cast<uint32_t>(r);
+    return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) |
+           static_cast<uint32_t>(r);
 }
 
 // The drawing primitives a preview may use, bound to the window's draw list.
@@ -118,9 +130,8 @@ struct NodeGraphNodeGizmoOps
     // Draw into (x, y, w, h), screen pixels. `dpi` is the editor's scale, for
     // line thickness and anything else measured in pixels rather than in the
     // band's own proportions.
-    void  (*draw)(uint32_t typeId, const void* instance,
-                  float x, float y, float w, float h, float dpi,
-                  const NodeGraphPreviewCanvas& canvas) = nullptr;
+    void (*draw)(uint32_t typeId, const void* instance, float x, float y, float w, float h, float dpi,
+                 const NodeGraphPreviewCanvas& canvas) = nullptr;
 };
 
 /**
@@ -132,20 +143,19 @@ struct NodeGraphPreviewOps
 {
     // One preview instance per open document.
     void* (*create)() = nullptr;
-    void  (*destroy)(void* preview) = nullptr;
+    void (*destroy)(void* preview) = nullptr;
 
     // Back to the starting state (the transport's Restart).
-    void  (*reset)(void* preview) = nullptr;
+    void (*reset)(void* preview) = nullptr;
 
     // Advance by dt seconds and draw. (x, y) is the top-left of the preview
     // rect in screen pixels, (w, h) its size; pixelsPerMeter converts the
     // domain's world units to that rect. dt is 0 when the transport is paused,
     // which must still draw the current state.
-    void  (*tick)(void* preview, const NodeGraphPreviewGraph& graph, float dt,
-                  float x, float y, float w, float h, float pixelsPerMeter,
-                  const NodeGraphPreviewCanvas& canvas) = nullptr;
+    void (*tick)(void* preview, const NodeGraphPreviewGraph& graph, float dt, float x, float y, float w, float h,
+                 float pixelsPerMeter, const NodeGraphPreviewCanvas& canvas) = nullptr;
 };
 
-#endif // DEKI_EDITOR
+#endif  // DEKI_EDITOR
 
 }  // namespace DekiNodeGraph

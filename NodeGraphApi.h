@@ -10,15 +10,15 @@
 // deki-nodegraph.dll. On embedded / runtime static-link builds there are no
 // DLLs and this collapses to nothing.
 #ifdef DEKI_EDITOR
-    #ifdef _WIN32
-        #ifdef DEKI_NODEGRAPH_EXPORTS
-            #define DEKI_NODEGRAPH_API __declspec(dllexport)
-        #else
-            #define DEKI_NODEGRAPH_API __declspec(dllimport)
-        #endif
-    #else
-        #define DEKI_NODEGRAPH_API
-    #endif
+#ifdef _WIN32
+#ifdef DEKI_NODEGRAPH_EXPORTS
+#define DEKI_NODEGRAPH_API __declspec(dllexport)
 #else
-    #define DEKI_NODEGRAPH_API
+#define DEKI_NODEGRAPH_API __declspec(dllimport)
+#endif
+#else
+#define DEKI_NODEGRAPH_API
+#endif
+#else
+#define DEKI_NODEGRAPH_API
 #endif

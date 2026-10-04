@@ -40,8 +40,8 @@ Node MakeNode(uint32_t id, uint32_t typeId)
 Graph Chain()
 {
     Graph g;
-    g.nodes = {MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300), MakeNode(4, 200)};
-    g.links = {Link{1, 0, 2, 0}, Link{2, 0, 3, 0}};
+    g.nodes = { MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300), MakeNode(4, 200) };
+    g.links = { Link{ 1, 0, 2, 0 }, Link{ 2, 0, 3, 0 } };
     return g;
 }
 
@@ -102,8 +102,8 @@ TEST(NodeGraphQueries, NextDistinguishesPins)
     // Pin number is half the key. A node with two outputs must not have one
     // pin answer for the other, which is what makes a branch node work.
     Graph g;
-    g.nodes = {MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300)};
-    g.links = {Link{1, 0, 2, 0}, Link{1, 1, 3, 0}};
+    g.nodes = { MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300) };
+    g.links = { Link{ 1, 0, 2, 0 }, Link{ 1, 1, 3, 0 } };
 
     ASSERT_NE(g.Next(1, 0), nullptr);
     EXPECT_EQ(g.Next(1, 0)->id, 2u);
@@ -118,8 +118,8 @@ TEST(NodeGraphQueries, NextTakesTheFirstOfSeveralLinksOnOnePin)
     // can. Documented behaviour is first-wins, and it has to stay decidable
     // rather than becoming "whichever the container happens to yield".
     Graph g;
-    g.nodes = {MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300)};
-    g.links = {Link{1, 0, 2, 0}, Link{1, 0, 3, 0}};
+    g.nodes = { MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300) };
+    g.links = { Link{ 1, 0, 2, 0 }, Link{ 1, 0, 3, 0 } };
 
     const Node* n = g.Next(1, 0);
     ASSERT_NE(n, nullptr);
@@ -131,8 +131,8 @@ TEST(NodeGraphQueries, NextReturnsNullWhenTheLinkPointsAtAMissingNode)
     // A dangling link is the shape a partial delete leaves behind. Next() has
     // to answer null rather than hand back a pointer into nothing.
     Graph g;
-    g.nodes = {MakeNode(1, 100)};
-    g.links = {Link{1, 0, 42, 0}};
+    g.nodes = { MakeNode(1, 100) };
+    g.links = { Link{ 1, 0, 42, 0 } };
     EXPECT_EQ(g.Next(1, 0), nullptr);
 }
 
@@ -141,8 +141,8 @@ TEST(NodeGraphQueries, ASelfLinkResolvesToTheNodeItself)
     // Not useful, but it must terminate rather than recurse: Next() is one
     // step, so a caller's own loop guard is what stops a cycle.
     Graph g;
-    g.nodes = {MakeNode(1, 100)};
-    g.links = {Link{1, 0, 1, 0}};
+    g.nodes = { MakeNode(1, 100) };
+    g.links = { Link{ 1, 0, 1, 0 } };
     const Node* n = g.Next(1, 0);
     ASSERT_NE(n, nullptr);
     EXPECT_EQ(n->id, 1u);
@@ -167,10 +167,10 @@ TEST(NodeGraphLoad, RefusesAnEmptyBuffer)
 TEST(NodeGraphLoad, RefusesABlobWhoseRootIsNotAMap)
 {
     // 0x90 is a MessagePack fixarray of length 0. The root has to be a map.
-    const uint8_t notAMap[] = {0x90};
+    const uint8_t notAMap[] = { 0x90 };
     EXPECT_EQ(NodeGraphData::LoadFromMemory(notAMap, sizeof(notAMap)), nullptr);
 
-    const uint8_t anInteger[] = {0x2a};  // positive fixint 42
+    const uint8_t anInteger[] = { 0x2a };  // positive fixint 42
     EXPECT_EQ(NodeGraphData::LoadFromMemory(anInteger, sizeof(anInteger)), nullptr);
 }
 
@@ -179,11 +179,11 @@ TEST(NodeGraphLoad, RefusesATruncatedBlobWithoutReadingPastTheEnd)
     // A fixmap claiming one pair, with nothing after it. Under ASan or on a
     // device this is the case that reads off the end if the parser trusts the
     // declared size.
-    const uint8_t truncated[] = {0x81};
+    const uint8_t truncated[] = { 0x81 };
     EXPECT_EQ(NodeGraphData::LoadFromMemory(truncated, sizeof(truncated)), nullptr);
 
     // A map claiming 15 pairs with one truncated key.
-    const uint8_t truncatedKey[] = {0x8f, 0xa5, 'n', 'o', 'd'};
+    const uint8_t truncatedKey[] = { 0x8f, 0xa5, 'n', 'o', 'd' };
     EXPECT_EQ(NodeGraphData::LoadFromMemory(truncatedKey, sizeof(truncatedKey)), nullptr);
 }
 
@@ -191,8 +191,10 @@ TEST(NodeGraphLoad, RefusesRandomBytesOfEveryLength)
 {
     // Not a fuzzer, but enough to catch a parser that dereferences before it
     // bounds-checks: every prefix of a byte pattern with no valid structure.
-    const uint8_t junk[] = {0xde, 0xad, 0xbe, 0xef, 0xff, 0x00, 0x81, 0xc1,
-                            0xdd, 0xff, 0xff, 0xff, 0xff, 0xa0, 0x7f, 0xcb};
+    const uint8_t junk[] = { 0xde, 0xad, 0xbe, 0xef, 0xff, 0x00, 0x81, 0xc1,
+                             0xdd, 0xff, 0xff, 0xff, 0xff, 0xa0, 0x7f, 0xcb };
     for (size_t n = 1; n <= sizeof(junk); ++n)
+    {
         EXPECT_EQ(NodeGraphData::LoadFromMemory(junk, n), nullptr) << "accepted junk of length " << n;
+    }
 }

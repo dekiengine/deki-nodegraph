@@ -15,7 +15,7 @@
 
 #include <deki/reflection/Property.h>
 #include "deki-nodegraph/NodeFactory.h"
-#include <deki/Component.h>   // DekiHashString/DekiHashStringLen: used by the
+#include <deki/Component.h>  // DekiHashString/DekiHashStringLen: used by the
 
 #ifdef DEKI_EDITOR
 #include "deki-nodegraph/NodeTypeRegistry.h"
@@ -24,23 +24,24 @@
 
 namespace DekiNodeGraph
 {
-                                // registration macros below AND by every
-                                // generated node .gen.cpp — this header must be
-                                // self-contained (package DLLs have no PCH that
-                                // would supply it transitively)
+// registration macros below AND by every
+// generated node .gen.cpp — this header must be
+// self-contained (package DLLs have no PCH that
+// would supply it transitively)
 
 /**
  * @brief Static metadata for one node type (editor-only; drives the node canvas).
  */
-struct DekiNodeMeta {
-    const char* name;                    // node type name (StaticNodeName); stable id
-    const char* category;                // "Domain/MenuGroup" (StaticNodeCategory)
-    uint32_t typeId;                     // Deki::HashString(name)
+struct DekiNodeMeta
+{
+    const char* name;                      // node type name (StaticNodeName); stable id
+    const char* category;                  // "Domain/MenuGroup" (StaticNodeCategory)
+    uint32_t typeId;                       // Deki::HashString(name)
     const Deki::PropertyInfo* properties;  // reflected fields (from GetProperties())
     int propertyCount;
-    const char* const* inputPins;        // input pin labels (nullptr = no inputs)
+    const char* const* inputPins;  // input pin labels (nullptr = no inputs)
     int inputPinCount;
-    const char* const* outputPins;       // output pin labels (nullptr = no fixed outputs)
+    const char* const* outputPins;  // output pin labels (nullptr = no fixed outputs)
     int outputPinCount;
     const char* dynamicOutputsProperty;  // DEKI_EXPORT property driving output count
                                          // (nullptr = fixed outputs)
@@ -52,20 +53,20 @@ struct DekiNodeMeta {
     // still-running (not-yet-rebuilt) editor. New fields go at the end so a stale
     // editor reads the fields it knows at correct offsets and ignores the rest
     // (same rule as Deki::PropertyInfo::physicalUnit trailing its struct).
-    const char* displayName;             // editor label (StaticNodeDisplayName), or
-                                         // nullptr to derive from name
-    const char* childCategory = nullptr; // full category of child node types this node
-                                         // stacks (StaticNodeChildCategory), or nullptr
-    const char* titleProperty = nullptr; // String property used as the canvas title
-                                         // (StaticNodeTitleProperty), or nullptr
-    bool permanent = false;              // fixed part of every graph of its domain
-                                         // (StaticNodePermanent): auto-seeded, hidden
-                                         // from the add menu, not deletable
-    bool declaresVariables = false;      // DEKI_NODE_VARIABLES: this node's child stack
-                                         // declares the graph's variables. Each child's
-                                         // titleProperty is the variable NAME and its
-                                         // other exported property is the initial VALUE,
-                                         // whose reflected type is the variable's type.
+    const char* displayName;                 // editor label (StaticNodeDisplayName), or
+                                             // nullptr to derive from name
+    const char* childCategory = nullptr;     // full category of child node types this node
+                                             // stacks (StaticNodeChildCategory), or nullptr
+    const char* titleProperty = nullptr;     // String property used as the canvas title
+                                             // (StaticNodeTitleProperty), or nullptr
+    bool permanent = false;                  // fixed part of every graph of its domain
+                                             // (StaticNodePermanent): auto-seeded, hidden
+                                             // from the add menu, not deletable
+    bool declaresVariables = false;          // DEKI_NODE_VARIABLES: this node's child stack
+                                             // declares the graph's variables. Each child's
+                                             // titleProperty is the variable NAME and its
+                                             // other exported property is the initial VALUE,
+                                             // whose reflected type is the variable's type.
     const char* subgraphCategory = nullptr;  // DEKI_NODE_SUBGRAPH: this node owns an INNER
                                              // GRAPH (double-click to descend) whose add-node
                                              // menu offers this category. nullptr = flat node.
@@ -84,29 +85,32 @@ struct DekiNodeMeta {
 
 // Runtime (all platforms): register create/deserialize/destroy in NodeFactory.
 // DeserializeMsgPack(T&, ...) is the generated free function (declared in T.gen.h).
-#define REGISTER_RUNTIME_NODE(ClassName) \
-    static struct ClassName##_NodeFactoryRegistrar { \
-        ClassName##_NodeFactoryRegistrar() { \
-            ::DekiNodeGraph::SceneFormat::NodeFactory::Instance().Register( \
-                ::Deki::HashString(ClassName::StaticNodeName), \
-                []() -> void* { return new ClassName(); }, \
-                [](void* p, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize) -> bool { \
-                    return DeserializeMsgPack(*static_cast<ClassName*>(p), parser, mapSize); }, \
-                [](void* p) { delete static_cast<ClassName*>(p); }); \
-        } \
+#define REGISTER_RUNTIME_NODE(ClassName)                                                                               \
+    static struct ClassName##_NodeFactoryRegistrar                                                                     \
+    {                                                                                                                  \
+        ClassName##_NodeFactoryRegistrar()                                                                             \
+        {                                                                                                              \
+            ::DekiNodeGraph::SceneFormat::NodeFactory::Instance().Register(                                            \
+                ::Deki::HashString(ClassName::StaticNodeName), []() -> void* { return new ClassName(); },              \
+                [](void* p, ::Deki::SceneFormat::SceneMsgPackParser& parser, uint32_t mapSize) -> bool                 \
+                { return DeserializeMsgPack(*static_cast<ClassName*>(p), parser, mapSize); },                          \
+                [](void* p) { delete static_cast<ClassName*>(p); });                                                   \
+        }                                                                                                              \
     } s_##ClassName##_NodeFactoryRegistrar
 
 // Editor: register metadata in NodeTypeRegistry (add-node menu + inspector).
 #ifdef DEKI_EDITOR
-    #define REGISTER_NODE(ClassName) \
-        static struct ClassName##_NodeRegistrar { \
-            ClassName##_NodeRegistrar() { \
-                ::DekiNodeGraph::NodeTypeRegistry::Instance().Register(&ClassName::GetNodeMeta(), \
-                                                     sizeof(::DekiNodeGraph::DekiNodeMeta)); \
-            } \
-        } s_##ClassName##_NodeRegistrar
+#define REGISTER_NODE(ClassName)                                                                                       \
+    static struct ClassName##_NodeRegistrar                                                                            \
+    {                                                                                                                  \
+        ClassName##_NodeRegistrar()                                                                                    \
+        {                                                                                                              \
+            ::DekiNodeGraph::NodeTypeRegistry::Instance().Register(&ClassName::GetNodeMeta(),                          \
+                                                                   sizeof(::DekiNodeGraph::DekiNodeMeta));             \
+        }                                                                                                              \
+    } s_##ClassName##_NodeRegistrar
 #else
-    #define REGISTER_NODE(ClassName) /* editor-only */
+#define REGISTER_NODE(ClassName) /* editor-only */
 #endif
 
 // Editor: register a node-graph domain from the owning package/project DLL.
@@ -114,37 +118,37 @@ struct DekiNodeMeta {
 // node set, and which node type new graphs are seeded with. Place at file scope
 // in an editor-only translation unit (hand-written, not generated).
 #ifdef DEKI_EDITOR
-    #define REGISTER_NODE_GRAPH_DOMAIN(VarName, AssetType, Display, DomainKey, EntryType) \
-        static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{AssetType, Display, DomainKey, EntryType}; \
-        static struct VarName##_DomainRegistrar { \
-            VarName##_DomainRegistrar() { \
-                ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); \
-            } \
-        } s_##VarName##_DomainRegistrar
+#define REGISTER_NODE_GRAPH_DOMAIN(VarName, AssetType, Display, DomainKey, EntryType)                                  \
+    static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{ AssetType, Display, DomainKey, EntryType };             \
+    static struct VarName##_DomainRegistrar                                                                            \
+    {                                                                                                                  \
+        VarName##_DomainRegistrar() { ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); }       \
+    } s_##VarName##_DomainRegistrar
 
-    // Same, plus a live preview (NodeGraphPreviewOps) so the Node Graph window
-    // offers a Preview panel for this domain. `PreviewOps` is any expression
-    // yielding a NodeGraphPreviewOps.
-    #define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps) \
-        static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{AssetType, Display, DomainKey, EntryType, PreviewOps}; \
-        static struct VarName##_DomainRegistrar { \
-            VarName##_DomainRegistrar() { \
-                ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); \
-            } \
-        } s_##VarName##_DomainRegistrar
+// Same, plus a live preview (NodeGraphPreviewOps) so the Node Graph window
+// offers a Preview panel for this domain. `PreviewOps` is any expression
+// yielding a NodeGraphPreviewOps.
+#define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps)              \
+    static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{ AssetType, Display, DomainKey, EntryType, PreviewOps }; \
+    static struct VarName##_DomainRegistrar                                                                            \
+    {                                                                                                                  \
+        VarName##_DomainRegistrar() { ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); }       \
+    } s_##VarName##_DomainRegistrar
 
-    // Same again, plus per-node gizmos (NodeGraphNodeGizmoOps) so the
-    // properties panel can illustrate the selected node.
-    #define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW_GIZMOS(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps, GizmoOps) \
-        static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{AssetType, Display, DomainKey, EntryType, PreviewOps, GizmoOps}; \
-        static struct VarName##_DomainRegistrar { \
-            VarName##_DomainRegistrar() { \
-                ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); \
-            } \
-        } s_##VarName##_DomainRegistrar
+// Same again, plus per-node gizmos (NodeGraphNodeGizmoOps) so the
+// properties panel can illustrate the selected node.
+#define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW_GIZMOS(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps,       \
+                                                  GizmoOps)                                                            \
+    static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{ AssetType, Display,    DomainKey,                       \
+                                                               EntryType, PreviewOps, GizmoOps };                      \
+    static struct VarName##_DomainRegistrar                                                                            \
+    {                                                                                                                  \
+        VarName##_DomainRegistrar() { ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); }       \
+    } s_##VarName##_DomainRegistrar
 #else
-    #define REGISTER_NODE_GRAPH_DOMAIN(VarName, AssetType, Display, DomainKey, EntryType) /* editor-only */
-    #define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps) /* editor-only */
+#define REGISTER_NODE_GRAPH_DOMAIN(VarName, AssetType, Display, DomainKey, EntryType) /* editor-only */
+#define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW(VarName, AssetType, Display, DomainKey, EntryType,                          \
+                                           PreviewOps) /* editor-only */
 #endif
 
 }  // namespace DekiNodeGraph

@@ -17,89 +17,105 @@ using nlohmann::json;
 
 namespace
 {
-    // Depth-first search across every graph level. Reports the node, the graph
-    // holding it, and the id of the subgraph node owning that graph (0 = root).
-    NodeGraphDocNode* FindIn(NodeGraphDocGraph& graph, uint32_t id, uint32_t ownerId,
-                             NodeGraphDocGraph** outGraph, uint32_t* outOwner)
+// Depth-first search across every graph level. Reports the node, the graph
+// holding it, and the id of the subgraph node owning that graph (0 = root).
+NodeGraphDocNode* FindIn(NodeGraphDocGraph& graph, uint32_t id, uint32_t ownerId, NodeGraphDocGraph** outGraph,
+                         uint32_t* outOwner)
+{
+    for (auto& n : graph.nodes)
     {
-        for (auto& n : graph.nodes)
+        if (n.id == id)
         {
-            if (n.id == id)
+            if (outGraph)
             {
-                if (outGraph) *outGraph = &graph;
-                if (outOwner) *outOwner = ownerId;
-                return &n;
+                *outGraph = &graph;
             }
-            if (n.inner)
+            if (outOwner)
             {
-                if (NodeGraphDocNode* hit = FindIn(*n.inner, id, n.id, outGraph, outOwner))
-                    return hit;
+                *outOwner = ownerId;
+            }
+            return &n;
+        }
+        if (n.inner)
+        {
+            if (NodeGraphDocNode* hit = FindIn(*n.inner, id, n.id, outGraph, outOwner))
+            {
+                return hit;
             }
         }
-        return nullptr;
     }
-
-    void DestroyChildren(NodeGraphDocNode& node)
-    {
-        for (auto& c : node.children)
-        {
-            if (c.meta && c.meta->destroyFunc && c.instance)
-                c.meta->destroyFunc(c.instance);
-            c.instance = nullptr;
-        }
-        node.children.clear();
-    }
-
-    void DestroyGraphContents(NodeGraphDocGraph& graph);
-
-    // Destroy one node's own instance, its child stack and its inner graph.
-    void DestroyNode(NodeGraphDocNode& node)
-    {
-        DestroyChildren(node);
-        if (node.inner)
-        {
-            DestroyGraphContents(*node.inner);
-            delete node.inner;
-            node.inner = nullptr;
-        }
-        if (node.meta && node.meta->destroyFunc && node.instance)
-            node.meta->destroyFunc(node.instance);
-        node.instance = nullptr;
-    }
-
-    void DestroyGraphContents(NodeGraphDocGraph& graph)
-    {
-        for (auto& n : graph.nodes)
-            DestroyNode(n);
-        graph.nodes.clear();
-        graph.links.clear();
-    }
-
-    // Serialize one graph level ({"links", "nodes"}); recurses through
-    // NodeToJson for any node that owns an inner graph.
-    json GraphToJson(const NodeGraphDocument& doc, const NodeGraphDocGraph& graph)
-    {
-        json jnodes = json::array();
-        for (const auto& n : graph.nodes)
-            jnodes.push_back(doc.NodeToJson(n));
-
-        json jlinks = json::array();
-        for (const auto& l : graph.links)
-        {
-            json jl;
-            jl["from"] = l.fromNode;
-            jl["fromPin"] = l.fromPin;
-            jl["to"] = l.toNode;
-            jl["toPin"] = l.toPin;
-            jlinks.push_back(std::move(jl));
-        }
-
-        json j;
-        j["links"] = std::move(jlinks);
-        j["nodes"] = std::move(jnodes);
-        return j;
-    }
+    return nullptr;
 }
+
+void DestroyChildren(NodeGraphDocNode& node)
+{
+    for (auto& c : node.children)
+    {
+        if (c.meta && c.meta->destroyFunc && c.instance)
+        {
+            c.meta->destroyFunc(c.instance);
+        }
+        c.instance = nullptr;
+    }
+    node.children.clear();
+}
+
+void DestroyGraphContents(NodeGraphDocGraph& graph);
+
+// Destroy one node's own instance, its child stack and its inner graph.
+void DestroyNode(NodeGraphDocNode& node)
+{
+    DestroyChildren(node);
+    if (node.inner)
+    {
+        DestroyGraphContents(*node.inner);
+        delete node.inner;
+        node.inner = nullptr;
+    }
+    if (node.meta && node.meta->destroyFunc && node.instance)
+    {
+        node.meta->destroyFunc(node.instance);
+    }
+    node.instance = nullptr;
+}
+
+void DestroyGraphContents(NodeGraphDocGraph& graph)
+{
+    for (auto& n : graph.nodes)
+    {
+        DestroyNode(n);
+    }
+    graph.nodes.clear();
+    graph.links.clear();
+}
+
+// Serialize one graph level ({"links", "nodes"}); recurses through
+// NodeToJson for any node that owns an inner graph.
+json GraphToJson(const NodeGraphDocument& doc, const NodeGraphDocGraph& graph)
+{
+    json jnodes = json::array();
+    for (const auto& n : graph.nodes)
+    {
+        jnodes.push_back(doc.NodeToJson(n));
+    }
+
+    json jlinks = json::array();
+    for (const auto& l : graph.links)
+    {
+        json jl;
+        jl["from"] = l.fromNode;
+        jl["fromPin"] = l.fromPin;
+        jl["to"] = l.toNode;
+        jl["toPin"] = l.toPin;
+        jlinks.push_back(std::move(jl));
+    }
+
+    json j;
+    j["links"] = std::move(jlinks);
+    j["nodes"] = std::move(jnodes);
+    return j;
+}
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Graph lookup
@@ -108,7 +124,9 @@ namespace
 NodeGraphDocGraph* NodeGraphDocument::GraphOf(uint32_t ownerNodeId)
 {
     if (ownerNodeId == 0)
+    {
         return &root;
+    }
     NodeGraphDocNode* owner = FindNode(ownerNodeId);
     return owner ? owner->inner : nullptr;
 }
@@ -171,9 +189,8 @@ uint32_t NodeGraphDocument::AddNode(uint32_t typeId, float x, float y, uint32_t 
     return newId;
 }
 
-bool NodeGraphDocument::AddNodeWithId(uint32_t id, const std::string& typeName,
-                                      float x, float y, const nlohmann::json& values,
-                                      uint32_t ownerNodeId)
+bool NodeGraphDocument::AddNodeWithId(uint32_t id, const std::string& typeName, float x, float y,
+                                      const nlohmann::json& values, uint32_t ownerNodeId)
 {
     const DekiNodeGraph::DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
     if (!meta || !meta->createFunc)
@@ -189,8 +206,7 @@ bool NodeGraphDocument::AddNodeWithId(uint32_t id, const std::string& typeName,
     NodeGraphDocGraph* graph = GraphOf(ownerNodeId);
     if (!graph)
     {
-        DEKI_LOG_ERROR("NodeGraphDocument: AddNodeWithId into node %u, which owns no graph",
-                       ownerNodeId);
+        DEKI_LOG_ERROR("NodeGraphDocument: AddNodeWithId into node %u, which owns no graph", ownerNodeId);
         return false;
     }
 
@@ -202,13 +218,18 @@ bool NodeGraphDocument::AddNodeWithId(uint32_t id, const std::string& typeName,
     node.y = y;
     if (!NodePropertiesFromJson(node.instance, *meta, values))
     {
-        if (meta->destroyFunc) meta->destroyFunc(node.instance);
+        if (meta->destroyFunc)
+        {
+            meta->destroyFunc(node.instance);
+        }
         return false;
     }
 
     graph->nodes.push_back(node);
     if (id >= nextNodeId)
+    {
         nextNodeId = id + 1;
+    }
     dirty = true;
     return true;
 }
@@ -217,19 +238,22 @@ bool NodeGraphDocument::RemoveNode(uint32_t id)
 {
     NodeGraphDocGraph* graph = GraphContaining(id);
     if (!graph)
+    {
         return false;
+    }
 
-    auto it = std::find_if(graph->nodes.begin(), graph->nodes.end(),
-                           [id](const NodeGraphDocNode& n) { return n.id == id; });
+    auto it =
+        std::find_if(graph->nodes.begin(), graph->nodes.end(), [id](const NodeGraphDocNode& n) { return n.id == id; });
     if (it == graph->nodes.end())
+    {
         return false;
+    }
 
     DestroyNode(*it);
     graph->nodes.erase(it);
 
     graph->links.erase(std::remove_if(graph->links.begin(), graph->links.end(),
-                                      [id](const NodeGraphDocLink& l)
-                                      { return l.fromNode == id || l.toNode == id; }),
+                                      [id](const NodeGraphDocLink& l) { return l.fromNode == id || l.toNode == id; }),
                        graph->links.end());
     dirty = true;
     return true;
@@ -244,7 +268,9 @@ bool NodeGraphDocument::AddLink(const NodeGraphDocLink& link)
         return false;
     }
     if (std::find(graph->links.begin(), graph->links.end(), link) != graph->links.end())
+    {
         return false;
+    }
     graph->links.push_back(link);
     dirty = true;
     return true;
@@ -254,28 +280,36 @@ bool NodeGraphDocument::RemoveLink(const NodeGraphDocLink& link)
 {
     NodeGraphDocGraph* graph = GraphContaining(link.fromNode);
     if (!graph)
+    {
         return false;
+    }
     auto it = std::find(graph->links.begin(), graph->links.end(), link);
     if (it == graph->links.end())
+    {
         return false;
+    }
     graph->links.erase(it);
     dirty = true;
     return true;
 }
 
-bool NodeGraphDocument::RemoveLinkFromPin(uint32_t fromNode, int fromPin,
-                                          NodeGraphDocLink* outRemoved)
+bool NodeGraphDocument::RemoveLinkFromPin(uint32_t fromNode, int fromPin, NodeGraphDocLink* outRemoved)
 {
     NodeGraphDocGraph* graph = GraphContaining(fromNode);
     if (!graph)
+    {
         return false;
+    }
     auto it = std::find_if(graph->links.begin(), graph->links.end(),
-                           [&](const NodeGraphDocLink& l)
-                           { return l.fromNode == fromNode && l.fromPin == fromPin; });
+                           [&](const NodeGraphDocLink& l) { return l.fromNode == fromNode && l.fromPin == fromPin; });
     if (it == graph->links.end())
+    {
         return false;
+    }
     if (outRemoved)
+    {
         *outRemoved = *it;
+    }
     graph->links.erase(it);
     dirty = true;
     return true;
@@ -302,7 +336,9 @@ bool NodeGraphDocument::EnsureSubgraph(uint32_t nodeId)
 {
     NodeGraphDocNode* node = FindNode(nodeId);
     if (!node || !node->meta || !node->meta->subgraphCategory)
-        return false;   // not a subgraph node: nothing to ensure
+    {
+        return false;  // not a subgraph node: nothing to ensure
+    }
 
     if (!node->inner)
     {
@@ -311,9 +347,13 @@ bool NodeGraphDocument::EnsureSubgraph(uint32_t nodeId)
     }
     const char* entryType = node->meta->subgraphEntry;
     if (!entryType || entryType[0] == '\0')
-        return true;                       // subgraph with no seeded entry
+    {
+        return true;  // subgraph with no seeded entry
+    }
     if (!node->inner->nodes.empty())
-        return true;                       // already seeded or authored
+    {
+        return true;  // already seeded or authored
+    }
 
     const DekiNodeGraph::DekiNodeMeta* entryMeta = NodeTypeRegistry::Instance().GetMeta(std::string(entryType));
     if (!entryMeta)
@@ -332,13 +372,19 @@ nlohmann::json NodeGraphDocument::NodeToJson(const NodeGraphDocNode& node) const
 {
     json values;
     if (!NodePropertiesToJson(node.instance, *node.meta, values))
-        values = json::object();   // logged by NodePropertiesToJson
+    {
+        values = json::object();  // logged by NodePropertiesToJson
+    }
 
     json jn;
     if (!node.children.empty())
+    {
         jn["children"] = ChildrenToJson(node);
+    }
     if (node.inner)
+    {
         jn["graph"] = GraphToJson(*this, *node.inner);
+    }
     jn["id"] = node.id;
     jn["type"] = node.meta->name;
     jn["values"] = std::move(values);
@@ -355,7 +401,9 @@ bool NodeGraphDocument::NodeFromJson(uint32_t ownerNodeId, const nlohmann::json&
     const float y = jn.value("y", 0.0f);
 
     if (!AddNodeWithId(id, typeName, x, y, jn.value("values", json::object()), ownerNodeId))
+    {
         return false;
+    }
 
     if (jn.contains("children") && !ChildrenFromJson(id, jn.at("children")))
     {
@@ -368,9 +416,13 @@ bool NodeGraphDocument::NodeFromJson(uint32_t ownerNodeId, const nlohmann::json&
         const json& jg = jn.at("graph");
         NodeGraphDocNode* node = FindNode(id);
         if (!node)
+        {
             return false;
+        }
         if (!node->inner)
+        {
             node->inner = new NodeGraphDocGraph();
+        }
 
         if (jg.contains("nodes"))
         {
@@ -387,7 +439,9 @@ bool NodeGraphDocument::NodeFromJson(uint32_t ownerNodeId, const nlohmann::json&
         {
             NodeGraphDocGraph* inner = GraphOf(id);
             if (!inner)
+            {
                 return false;
+            }
             for (const auto& jl : jg.at("links"))
             {
                 NodeGraphDocLink l;
@@ -427,7 +481,9 @@ int NodeGraphDocument::AddChild(uint32_t nodeId, uint32_t childTypeId, int index
     child.enabled = true;
 
     if (index < 0 || index > static_cast<int>(node->children.size()))
+    {
         index = static_cast<int>(node->children.size());
+    }
     node->children.insert(node->children.begin() + index, child);
     dirty = true;
     return index;
@@ -455,12 +511,17 @@ bool NodeGraphDocument::AddChildFromJson(uint32_t nodeId, int index, const std::
     child.enabled = enabled;
     if (!NodePropertiesFromJson(child.instance, *meta, values))
     {
-        if (meta->destroyFunc) meta->destroyFunc(child.instance);
+        if (meta->destroyFunc)
+        {
+            meta->destroyFunc(child.instance);
+        }
         return false;
     }
 
     if (index < 0 || index > static_cast<int>(node->children.size()))
+    {
         index = static_cast<int>(node->children.size());
+    }
     node->children.insert(node->children.begin() + index, child);
     dirty = true;
     return true;
@@ -470,11 +531,15 @@ bool NodeGraphDocument::RemoveChild(uint32_t nodeId, int index)
 {
     NodeGraphDocNode* node = FindNode(nodeId);
     if (!node || index < 0 || index >= static_cast<int>(node->children.size()))
+    {
         return false;
+    }
 
     NodeGraphDocChild& child = node->children[index];
     if (child.meta && child.meta->destroyFunc && child.instance)
+    {
         child.meta->destroyFunc(child.instance);
+    }
     node->children.erase(node->children.begin() + index);
     dirty = true;
     return true;
@@ -484,10 +549,14 @@ bool NodeGraphDocument::MoveChild(uint32_t nodeId, int from, int to)
 {
     NodeGraphDocNode* node = FindNode(nodeId);
     if (!node)
+    {
         return false;
+    }
     const int count = static_cast<int>(node->children.size());
     if (from < 0 || from >= count || to < 0 || to >= count || from == to)
+    {
         return false;
+    }
 
     NodeGraphDocChild child = node->children[from];
     node->children.erase(node->children.begin() + from);
@@ -500,9 +569,13 @@ bool NodeGraphDocument::SetChildEnabled(uint32_t nodeId, int index, bool enabled
 {
     NodeGraphDocNode* node = FindNode(nodeId);
     if (!node || index < 0 || index >= static_cast<int>(node->children.size()))
+    {
         return false;
+    }
     if (node->children[index].enabled == enabled)
+    {
         return true;
+    }
     node->children[index].enabled = enabled;
     dirty = true;
     return true;
@@ -515,7 +588,9 @@ nlohmann::json NodeGraphDocument::ChildrenToJson(const NodeGraphDocNode& node) c
     {
         json values;
         if (!NodePropertiesToJson(c.instance, *c.meta, values))
-            values = json::object();   // logged by NodePropertiesToJson
+        {
+            values = json::object();  // logged by NodePropertiesToJson
+        }
 
         json jc;
         jc["enabled"] = c.enabled;
@@ -530,21 +605,26 @@ bool NodeGraphDocument::ChildrenFromJson(uint32_t nodeId, const nlohmann::json& 
 {
     NodeGraphDocNode* node = FindNode(nodeId);
     if (!node)
+    {
         return false;
+    }
 
     DestroyChildren(*node);
     if (!children.is_array())
-        return children.is_null();   // absent = empty stack
+    {
+        return children.is_null();  // absent = empty stack
+    }
 
     for (const auto& jc : children)
     {
         const std::string typeName = jc.value("type", "");
-        if (!AddChildFromJson(nodeId, -1, typeName,
-                              jc.value("values", json::object()), jc.value("enabled", true)))
+        if (!AddChildFromJson(nodeId, -1, typeName, jc.value("values", json::object()), jc.value("enabled", true)))
         {
             DEKI_LOG_ERROR("NodeGraphDocument: bad child '%s' in node %u", typeName.c_str(), nodeId);
             if (NodeGraphDocNode* n = FindNode(nodeId))
+            {
                 DestroyChildren(*n);
+            }
             return false;
         }
     }
@@ -571,10 +651,16 @@ std::vector<NodeGraphDocLink> NodeGraphDocument::AttachedLinks(uint32_t nodeId) 
     std::vector<NodeGraphDocLink> result;
     const NodeGraphDocGraph* graph = GraphContaining(nodeId);
     if (!graph)
+    {
         return result;
+    }
     for (const auto& l : graph->links)
+    {
         if (l.fromNode == nodeId || l.toNode == nodeId)
+        {
             result.push_back(l);
+        }
+    }
     return result;
 }
 
@@ -582,26 +668,38 @@ const NodeGraphDocLink* NodeGraphDocument::FindLinkFromPin(uint32_t fromNode, in
 {
     const NodeGraphDocGraph* graph = GraphContaining(fromNode);
     if (!graph)
+    {
         return nullptr;
+    }
     for (const auto& l : graph->links)
+    {
         if (l.fromNode == fromNode && l.fromPin == fromPin)
+        {
             return &l;
+        }
+    }
     return nullptr;
 }
 
 int NodeGraphDocument::OutputPinCount(const NodeGraphDocNode& node) const
 {
     if (!node.meta)
+    {
         return 0;
+    }
     const DekiNodeGraph::DekiNodeMeta& meta = *node.meta;
     if (!meta.dynamicOutputsProperty)
+    {
         return meta.outputPinCount;
+    }
 
     for (int i = 0; i < meta.propertyCount; ++i)
     {
         const Deki::PropertyInfo& p = meta.properties[i];
         if (std::string(p.name) != meta.dynamicOutputsProperty)
+        {
             continue;
+        }
 
         const char* field = static_cast<const char*>(node.instance) + p.offset;
         if (p.type == Deki::PropertyType::Int32)
@@ -618,17 +716,17 @@ int NodeGraphDocument::OutputPinCount(const NodeGraphDocNode& node) const
                     return static_cast<int>(reinterpret_cast<const std::vector<float>*>(field)->size());
                 case Deki::PropertyType::Int32:
                     return static_cast<int>(reinterpret_cast<const std::vector<int32_t>*>(field)->size());
-                default:
-                    return static_cast<int>(reinterpret_cast<const std::vector<std::string>*>(field)->size());
+                default: return static_cast<int>(reinterpret_cast<const std::vector<std::string>*>(field)->size());
             }
         }
         DEKI_LOG_ERROR("NodeGraphDocument: node type '%s' dynamicOutputsProperty '%s' must be "
-                       "Int32 or Array", meta.name, meta.dynamicOutputsProperty);
+                       "Int32 or Array",
+                       meta.name, meta.dynamicOutputsProperty);
         return 0;
     }
 
-    DEKI_LOG_ERROR("NodeGraphDocument: node type '%s' dynamicOutputsProperty '%s' not found",
-                   meta.name, meta.dynamicOutputsProperty);
+    DEKI_LOG_ERROR("NodeGraphDocument: node type '%s' dynamicOutputsProperty '%s' not found", meta.name,
+                   meta.dynamicOutputsProperty);
     return 0;
 }
 
@@ -657,8 +755,7 @@ bool NodeGraphDocument::FromJson(const nlohmann::json& j, std::string& outError)
             {
                 if (!NodeFromJson(0, jn))
                 {
-                    outError = "Invalid node (id " +
-                               std::to_string(jn.value("id", 0u)) + ", type '" +
+                    outError = "Invalid node (id " + std::to_string(jn.value("id", 0u)) + ", type '" +
                                jn.value("type", std::string()) + "')";
                     DestroyInstances();
                     return false;
@@ -683,7 +780,9 @@ bool NodeGraphDocument::FromJson(const nlohmann::json& j, std::string& outError)
         {
             const uint32_t stored = j.at("nextNodeId").get<uint32_t>();
             if (stored > nextNodeId)
+            {
                 nextNodeId = stored;
+            }
         }
     }
     catch (const json::exception& e)
@@ -693,7 +792,7 @@ bool NodeGraphDocument::FromJson(const nlohmann::json& j, std::string& outError)
         return false;
     }
 
-    dirty = false;   // freshly loaded == on-disk state
+    dirty = false;  // freshly loaded == on-disk state
     return true;
 }
 
@@ -702,4 +801,4 @@ void NodeGraphDocument::DestroyInstances()
     DestroyGraphContents(root);
 }
 
-} // namespace DekiEditor
+}  // namespace DekiEditor

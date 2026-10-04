@@ -18,18 +18,19 @@
 
 #include <nlohmann/json.hpp>
 
-namespace DekiNodeGraph { struct DekiNodeMeta; }
+namespace DekiNodeGraph
+{
+struct DekiNodeMeta;
+}
 namespace DekiEditor
 {
 
 // Write every reflected property of `instance` into `outValues` (an object).
-bool NodePropertiesToJson(const void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
-                          nlohmann::json& outValues);
+bool NodePropertiesToJson(const void* instance, const DekiNodeGraph::DekiNodeMeta& meta, nlohmann::json& outValues);
 
 // Apply `values` onto `instance`. Properties absent from `values` keep their
 // defaults; keys with no matching property are logged and skipped (forward
 // compatibility, same policy as the msgpack reader).
-bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
-                            const nlohmann::json& values);
+bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& meta, const nlohmann::json& values);
 
-} // namespace DekiEditor
+}  // namespace DekiEditor

@@ -52,7 +52,9 @@ using DekiNodeGraph::NodeTypeRegistry;
 std::string DomainOf(const char* category)
 {
     if (!category)
+    {
         return {};
+    }
     const char* slash = std::strchr(category, '/');
     return slash ? std::string(category, slash - category) : std::string(category);
 }
@@ -64,11 +66,15 @@ bool IsInnerOnlyCategory(const char* category)
     for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
     {
         if (meta->childCategory && std::strcmp(meta->childCategory, category) == 0)
+        {
             return true;
+        }
         if (meta->subgraphCategory && meta->subgraphCategory[0] != '\0' &&
             std::strcmp(meta->subgraphCategory, meta->category) != 0 &&
             std::strcmp(meta->subgraphCategory, category) == 0)
+        {
             return true;
+        }
     }
     return false;
 }
@@ -129,7 +135,9 @@ bool Save(const CliToolContext& ctx, OpenGraph& graph, std::string& error)
     }
     f.close();
     if (ctx.refreshAsset)
+    {
         ctx.refreshAsset(graph.relativePath);
+    }
     return true;
 }
 
@@ -141,17 +149,25 @@ bool ResolveEnumNames(const DekiNodeMeta& meta, json& values, std::string& error
     {
         const Deki::PropertyInfo& p = meta.properties[i];
         if (p.type != Deki::PropertyType::Enum || !values.contains(p.name) || !values[p.name].is_string())
+        {
             continue;
+        }
         const std::string name = values[p.name].get<std::string>();
         int index = -1;
         for (int e = 0; e < p.enumCount; ++e)
+        {
             if (p.enumValues && p.enumValues[e] && name == p.enumValues[e])
+            {
                 index = e;
+            }
+        }
         if (index < 0)
         {
             std::string names;
             for (int e = 0; e < p.enumCount; ++e)
+            {
                 names += (names.empty() ? "" : ", ") + std::string(p.enumValues[e] ? p.enumValues[e] : "");
+            }
             error = std::string("'") + name + "' is not a value of " + meta.name + "." + p.name + " (" + names + ")";
             return false;
         }
@@ -164,15 +180,17 @@ json CurrentValues(const NodeGraphDocNode& node)
 {
     json values = json::object();
     if (node.meta && node.instance)
+    {
         NodePropertiesToJson(node.instance, *node.meta, values);
+    }
     return values;
 }
 
 // A pin given as an index or by its label. Output labels of a node with
 // dynamic outputs (an FSM state's transitions) are the entries of the property
 // that drives them.
-bool ResolvePin(const NodeGraphDocument& doc, const NodeGraphDocNode& node, const json& pin, bool output,
-                int& outIndex, std::string& error)
+bool ResolvePin(const NodeGraphDocument& doc, const NodeGraphDocNode& node, const json& pin, bool output, int& outIndex,
+                std::string& error)
 {
     std::vector<std::string> labels;
     if (output && node.meta->dynamicOutputsProperty)
@@ -180,33 +198,45 @@ bool ResolvePin(const NodeGraphDocument& doc, const NodeGraphDocNode& node, cons
         const json values = CurrentValues(node);
         const json list = values.value(node.meta->dynamicOutputsProperty, json::array());
         if (list.is_array())
+        {
             for (const auto& entry : list)
+            {
                 labels.push_back(entry.is_string() ? entry.get<std::string>() : std::string());
+            }
+        }
     }
     else
     {
         const char* const* names = output ? node.meta->outputPins : node.meta->inputPins;
         const int count = output ? node.meta->outputPinCount : node.meta->inputPinCount;
         for (int i = 0; i < count && names; ++i)
+        {
             labels.push_back(names[i] ? names[i] : "");
+        }
     }
     const int count = output ? doc.OutputPinCount(node) : node.meta->inputPinCount;
 
     if (pin.is_number_integer())
+    {
         outIndex = pin.get<int>();
+    }
     else if (pin.is_string())
     {
         const auto it = std::find(labels.begin(), labels.end(), pin.get<std::string>());
         outIndex = it == labels.end() ? -1 : static_cast<int>(it - labels.begin());
     }
     else
+    {
         outIndex = -1;
+    }
 
     if (outIndex < 0 || outIndex >= count)
     {
         std::string names;
         for (const auto& l : labels)
+        {
             names += (names.empty() ? "" : ", ") + l;
+        }
         error = std::string("node ") + std::to_string(node.id) + " (" + node.meta->name + ") has no " +
                 (output ? "output" : "input") + " pin " + pin.dump() + " (it has " + std::to_string(count) +
                 (names.empty() ? "" : ": " + names) + ")";
@@ -218,7 +248,7 @@ bool ResolvePin(const NodeGraphDocument& doc, const NodeGraphDocNode& node, cons
 // Base for the tools: parse, run, report.
 class GraphTool : public CliTool
 {
-   public:
+public:
     bool Run(const CliToolContext& context, const std::string& argsJson, std::string& resultJson,
              std::string& error) override
     {
@@ -230,24 +260,30 @@ class GraphTool : public CliTool
         }
         OpenGraph graph;
         if (!Load(context, args, graph, error))
+        {
             return false;
+        }
         json result;
         if (!Apply(graph, args, result, error))
+        {
             return false;
+        }
         if (Mutates() && !Save(context, graph, error))
+        {
             return false;
+        }
         resultJson = result.dump();
         return true;
     }
 
-   protected:
+protected:
     virtual bool Mutates() const { return true; }
     virtual bool Apply(OpenGraph& graph, const json& args, json& result, std::string& error) = 0;
 };
 
 class GraphAddNodeTool : public GraphTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_add_node"; }
     const char* GetToolDescription() const override
     {
@@ -267,7 +303,7 @@ class GraphAddNodeTool : public GraphTool
             "values":{"type":"object","description":"Field values, as the node's inspector names them"}}})json";
     }
 
-   protected:
+protected:
     bool Apply(OpenGraph& graph, const json& args, json& result, std::string& error) override
     {
         NodeGraphDocument& doc = *graph.doc;
@@ -347,7 +383,9 @@ class GraphAddNodeTool : public GraphTool
         {
             json values = CurrentValues(*node);
             for (auto it = args["values"].begin(); it != args["values"].end(); ++it)
+            {
                 values[it.key()] = it.value();
+            }
             if (!ResolveEnumNames(*meta, values, error))
             {
                 doc.RemoveNode(id);
@@ -395,7 +433,7 @@ class GraphAddNodeTool : public GraphTool
 
 class GraphConnectTool : public GraphTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_connect"; }
     const char* GetToolDescription() const override
     {
@@ -413,7 +451,7 @@ class GraphConnectTool : public GraphTool
             "to_pin":{"description":"Input pin index or label (default 0)"}}})json";
     }
 
-   protected:
+protected:
     bool Apply(OpenGraph& graph, const json& args, json& result, std::string& error) override
     {
         NodeGraphDocument& doc = *graph.doc;
@@ -437,7 +475,9 @@ class GraphConnectTool : public GraphTool
         link.toNode = to;
         if (!ResolvePin(doc, *fromNode, args.value("from_pin", json(0)), true, link.fromPin, error) ||
             !ResolvePin(doc, *toNode, args.value("to_pin", json(0)), false, link.toPin, error))
+        {
             return false;
+        }
 
         NodeGraphDocLink replaced;
         const bool hadOne = doc.RemoveLinkFromPin(from, link.fromPin, &replaced);
@@ -448,14 +488,16 @@ class GraphConnectTool : public GraphTool
         }
         result = { { "from", from }, { "fromPin", link.fromPin }, { "to", to }, { "toPin", link.toPin } };
         if (hadOne)
+        {
             result["replaced"] = { { "to", replaced.toNode }, { "toPin", replaced.toPin } };
+        }
         return true;
     }
 };
 
 class GraphSetValuesTool : public GraphTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_set_values"; }
     const char* GetToolDescription() const override
     {
@@ -468,7 +510,7 @@ class GraphSetValuesTool : public GraphTool
             "asset":{"type":"string"},"node":{"type":"integer"},"values":{"type":"object"}}})json";
     }
 
-   protected:
+protected:
     bool Apply(OpenGraph& graph, const json& args, json& result, std::string& error) override
     {
         NodeGraphDocNode* node = graph.doc->FindNode(args.value("node", 0u));
@@ -489,7 +531,9 @@ class GraphSetValuesTool : public GraphTool
             values[it.key()] = it.value();
         }
         if (!ResolveEnumNames(*node->meta, values, error))
+        {
             return false;
+        }
         if (!NodePropertiesFromJson(node->instance, *node->meta, values))
         {
             error = std::string("a value does not fit its field on ") + node->meta->name + " (see the log)";
@@ -502,7 +546,7 @@ class GraphSetValuesTool : public GraphTool
 
 class GraphAddChildTool : public GraphTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_add_child"; }
     const char* GetToolDescription() const override
     {
@@ -516,7 +560,7 @@ class GraphAddChildTool : public GraphTool
             "values":{"type":"object"}}})json";
     }
 
-   protected:
+protected:
     bool Apply(OpenGraph& graph, const json& args, json& result, std::string& error) override
     {
         NodeGraphDocument& doc = *graph.doc;
@@ -531,8 +575,8 @@ class GraphAddChildTool : public GraphTool
         const DekiNodeMeta* meta = NodeTypeRegistry::Instance().GetMeta(typeName);
         if (!meta || !meta->category || std::strcmp(meta->category, node->meta->childCategory) != 0)
         {
-            error = "'" + typeName + "' is not a child a " + node->meta->name + " takes (" +
-                    node->meta->childCategory + ")";
+            error = "'" + typeName + "' is not a child a " + node->meta->name + " takes (" + node->meta->childCategory +
+                    ")";
             return false;
         }
         // Defaults, with the given values over them.
@@ -541,10 +585,16 @@ class GraphAddChildTool : public GraphTool
         NodePropertiesToJson(scratch, *meta, values);
         meta->destroyFunc(scratch);
         if (args.contains("values"))
+        {
             for (auto it = args["values"].begin(); it != args["values"].end(); ++it)
+            {
                 values[it.key()] = it.value();
+            }
+        }
         if (!ResolveEnumNames(*meta, values, error))
+        {
             return false;
+        }
         if (!doc.AddChildFromJson(nodeId, -1, typeName, values, true))
         {
             error = "a value does not fit its field on '" + typeName + "' (see the log)";
@@ -557,7 +607,7 @@ class GraphAddChildTool : public GraphTool
 
 class GraphGetTool : public GraphTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_get"; }
     const char* GetToolDescription() const override { return "Return a node-graph asset's whole content."; }
     const char* GetInputSchema() const override
@@ -565,7 +615,7 @@ class GraphGetTool : public GraphTool
         return R"json({"type":"object","required":["asset"],"properties":{"asset":{"type":"string"}}})json";
     }
 
-   protected:
+protected:
     bool Mutates() const override { return false; }
     bool Apply(OpenGraph& graph, const json&, json& result, std::string&) override
     {
@@ -578,7 +628,7 @@ class GraphGetTool : public GraphTool
 // screenshot, or to hand a person the exact place to look.
 class GraphViewTool : public CliTool
 {
-   public:
+public:
     const char* GetToolName() const override { return "graph_view"; }
     const char* GetToolDescription() const override
     {
@@ -618,7 +668,9 @@ class GraphViewTool : public CliTool
             return false;
         }
         if (!window->ShowCanvas(args.value("canvas", 0u), args.value("select", 0u), error))
+        {
             return false;
+        }
         resultJson = json({ { "canvas", args.value("canvas", 0u) }, { "selected", args.value("select", 0u) } }).dump();
         return true;
     }

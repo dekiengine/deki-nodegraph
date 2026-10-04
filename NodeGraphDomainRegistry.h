@@ -27,16 +27,15 @@ namespace DekiNodeGraph
  * survive FreeLibrary.
  */
 
-
-
 /**
  * @brief One node-graph domain (all strings are static storage in the owning DLL).
  */
-struct DekiNodeGraphDomain {
-    const char* assetTypeName;     // .asset "type" + AssetManager loader key
-    const char* displayName;       // human-readable ("Hero Behavior Graph")
-    const char* domainKey;         // category first-segment filter ("HeroBehavior")
-    const char* entryNodeTypeName; // node type new graphs seed with ("FsmEntry")
+struct DekiNodeGraphDomain
+{
+    const char* assetTypeName;      // .asset "type" + AssetManager loader key
+    const char* displayName;        // human-readable ("Hero Behavior Graph")
+    const char* domainKey;          // category first-segment filter ("HeroBehavior")
+    const char* entryNodeTypeName;  // node type new graphs seed with ("FsmEntry")
 
     // APPEND-ONLY past this point, same rule as DekiNodeMeta: the editor reads
     // domains provided by package DLLs across hot reload, so a field inserted
@@ -52,7 +51,8 @@ struct DekiNodeGraphDomain {
     NodeGraphNodeGizmoOps gizmos{};
 };
 
-class DEKI_NODEGRAPH_API NodeGraphDomainRegistry {
+class DEKI_NODEGRAPH_API NodeGraphDomainRegistry
+{
 public:
     static NodeGraphDomainRegistry& Instance();
 
@@ -75,6 +75,6 @@ private:
     std::unordered_map<std::string, const DekiNodeGraphDomain*> m_ByAssetType;
 };
 
-#endif // DEKI_EDITOR
+#endif  // DEKI_EDITOR
 
 }  // namespace DekiNodeGraph

@@ -17,7 +17,7 @@
 #include <deki/LogSystem.h>
 
 extern void DekiNodeGraph_RegisterComponents();
-extern int  DekiNodeGraph_GetAutoComponentCount();
+extern int DekiNodeGraph_GetAutoComponentCount();
 extern const Deki::ComponentMeta* DekiNodeGraph_GetAutoComponentMeta(int index);
 
 namespace DekiNodeGraph
@@ -30,85 +30,99 @@ namespace DekiNodeGraph
 
 static bool s_NodeGraphRegistered = false;
 
-
 }  // namespace DekiNodeGraph
 // The exports below are C symbols at global scope; the package's own
 // registration helpers and statics live in its namespace.
 using namespace DekiNodeGraph;
 
-extern "C" {
-
-DEKI_NODEGRAPH_API int DekiNodeGraph_EnsureRegistered(void)
+extern "C"
 {
+    DEKI_NODEGRAPH_API int DekiNodeGraph_EnsureRegistered(void)
+    {
 #ifdef DEKI_EDITOR
-    if (s_NodeGraphRegistered) return ::DekiNodeGraph_GetAutoComponentCount();
-    s_NodeGraphRegistered = true;
-    ::DekiNodeGraph_RegisterComponents();
-    return ::DekiNodeGraph_GetAutoComponentCount();
+        if (s_NodeGraphRegistered)
+        {
+            return ::DekiNodeGraph_GetAutoComponentCount();
+        }
+        s_NodeGraphRegistered = true;
+        ::DekiNodeGraph_RegisterComponents();
+        return ::DekiNodeGraph_GetAutoComponentCount();
 #else
-    return 0;
+        return 0;
 #endif
-}
+    }
 
-DEKI_PLUGIN_API const char* DekiPlugin_GetName(void) { return "Deki Node Graph Package"; }
+    DEKI_PLUGIN_API const char* DekiPlugin_GetName(void)
+    {
+        return "Deki Node Graph Package";
+    }
 
-DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
-{
+    DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
+    {
 #ifdef DEKI_PACKAGE_VERSION
-    return DEKI_PACKAGE_VERSION;
+        return DEKI_PACKAGE_VERSION;
 #else
-    return "0.0.0-dev";
+        return "0.0.0-dev";
 #endif
-}
+    }
 
+    DEKI_PLUGIN_API int DekiPlugin_Init(void)
+    {
+        return 0;
+    }
 
-DEKI_PLUGIN_API int DekiPlugin_Init(void) { return 0; }
-
-DEKI_PLUGIN_API void DekiPlugin_Shutdown(void) { s_NodeGraphRegistered = false; }
+    DEKI_PLUGIN_API void DekiPlugin_Shutdown(void)
+    {
+        s_NodeGraphRegistered = false;
+    }
 
 #ifdef DEKI_EDITOR
-DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
-{
-    return ::DekiNodeGraph_GetAutoComponentCount();
-}
-DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int index)
-{
-    return ::DekiNodeGraph_GetAutoComponentMeta(index);
-}
+    DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
+    {
+        return ::DekiNodeGraph_GetAutoComponentCount();
+    }
+    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int index)
+    {
+        return ::DekiNodeGraph_GetAutoComponentMeta(index);
+    }
 #else
-DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void) { return 0; }
-DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int) { return nullptr; }
+    DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
+    {
+        return 0;
+    }
+    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int)
+    {
+        return nullptr;
+    }
 #endif
 
-DEKI_PLUGIN_API void DekiPlugin_RegisterComponents(void)
-{
-    DekiNodeGraph_EnsureRegistered();
-}
+    DEKI_PLUGIN_API void DekiPlugin_RegisterComponents(void)
+    {
+        DekiNodeGraph_EnsureRegistered();
+    }
 
 #ifdef DEKI_EDITOR
-/**
- * @brief Drop every registered node type, factory thunk and graph domain.
- *
- * The editor calls this on each loaded package before it unloads plugin or
- * package DLLs: the registries hold meta and thunk pointers INTO those DLLs,
- * and reading them after FreeLibrary is a crash. Owning the wipe here is what
- * keeps the editor free of node-graph knowledge — it just asks every package to
- * clean up after itself.
- *
- * Consumers repopulate on the way back up: full reloads rerun their static
- * registrars, plugin-only reloads go through ::DekiPlugin_RegisterComponents
- * (see deki-fsm's DekiFsm_RegisterGraphTypes).
- */
-DEKI_PLUGIN_API void DekiPlugin_ClearRegistries(void)
-{
-    SceneFormat::NodeFactory::Instance().Clear();
-    NodeTypeRegistry::Instance().Clear();
-    NodeGraphDomainRegistry::Instance().Clear();
-}
+    /**
+     * @brief Drop every registered node type, factory thunk and graph domain.
+     *
+     * The editor calls this on each loaded package before it unloads plugin or
+     * package DLLs: the registries hold meta and thunk pointers INTO those DLLs,
+     * and reading them after FreeLibrary is a crash. Owning the wipe here is what
+     * keeps the editor free of node-graph knowledge — it just asks every package to
+     * clean up after itself.
+     *
+     * Consumers repopulate on the way back up: full reloads rerun their static
+     * registrars, plugin-only reloads go through ::DekiPlugin_RegisterComponents
+     * (see deki-fsm's DekiFsm_RegisterGraphTypes).
+     */
+    DEKI_PLUGIN_API void DekiPlugin_ClearRegistries(void)
+    {
+        SceneFormat::NodeFactory::Instance().Clear();
+        NodeTypeRegistry::Instance().Clear();
+        NodeGraphDomainRegistry::Instance().Clear();
+    }
 #endif
 
+    // Infrastructure package — no systems to install into the engine at load.
 
-// Infrastructure package — no systems to install into the engine at load.
-
-} // extern "C"
-
+}  // extern "C"

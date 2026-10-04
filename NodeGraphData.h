@@ -52,30 +52,34 @@
 namespace DekiNodeGraph
 {
 
-class DEKI_NODEGRAPH_API NodeGraphData {
+class DEKI_NODEGRAPH_API NodeGraphData
+{
 public:
     // One child in a node's ordered stack (see DEKI_NODE_CHILDREN). Children
     // are NodeFactory instances like top-level nodes but have no id and no
     // links; interpretation (e.g. "these are the variables") is the consumer's.
-    struct ChildInstance {
-        uint32_t typeId = 0;      // Deki::HashString(child type name)
-        void* instance = nullptr; // NodeFactory-created struct, populated from "values"
-        bool enabled = true;      // authoring toggle; disabled children are data only
+    struct ChildInstance
+    {
+        uint32_t typeId = 0;       // Deki::HashString(child type name)
+        void* instance = nullptr;  // NodeFactory-created struct, populated from "values"
+        bool enabled = true;       // authoring toggle; disabled children are data only
     };
 
     struct Graph;
 
-    struct NodeInstance {
-        uint32_t id = 0;          // document-unique node id (link endpoints)
-        uint32_t typeId = 0;      // Deki::HashString(node type name)
-        void* instance = nullptr; // NodeFactory-created struct, populated from "values"
+    struct NodeInstance
+    {
+        uint32_t id = 0;           // document-unique node id (link endpoints)
+        uint32_t typeId = 0;       // Deki::HashString(node type name)
+        void* instance = nullptr;  // NodeFactory-created struct, populated from "values"
         // Appended last (same cross-DLL append-only rule as DekiNodeMeta): a
         // stale reader still finds id/typeId/instance at their old offsets.
         std::vector<ChildInstance> children;
-        Graph* inner = nullptr;   // DEKI_NODE_SUBGRAPH contents (owned), or nullptr
+        Graph* inner = nullptr;  // DEKI_NODE_SUBGRAPH contents (owned), or nullptr
     };
 
-    struct Link {
+    struct Link
+    {
         uint32_t fromNode = 0;
         int32_t fromPin = 0;
         uint32_t toNode = 0;
@@ -84,7 +88,8 @@ public:
 
     // One graph level: the document root, or any node's inner graph. Every
     // query is scoped to this level, because every link is.
-    struct DEKI_NODEGRAPH_API Graph {
+    struct DEKI_NODEGRAPH_API Graph
+    {
         std::vector<NodeInstance> nodes;
         std::vector<Link> links;
 

@@ -5,7 +5,7 @@
 
 #include "deki-nodegraph/editor/NodeGraphDocument.h"
 
-#include <deki/reflection/Property.h>       // DekiPropertyType (by value below)
+#include <deki/reflection/Property.h>  // DekiPropertyType (by value below)
 
 #include <nlohmann/json.hpp>
 
@@ -15,7 +15,10 @@
 #include <string>
 #include <vector>
 
-namespace DekiNodeGraph { struct DekiNodeMeta; }
+namespace DekiNodeGraph
+{
+struct DekiNodeMeta;
+}
 namespace DekiEditor
 {
 
@@ -64,8 +67,7 @@ public:
 
 private:
     // Document lifecycle.
-    bool LoadDocument(const std::string& filePath, const std::string& cachePath,
-                      std::string& outError);
+    bool LoadDocument(const std::string& filePath, const std::string& cachePath, std::string& outError);
     void SaveDocument();
     void CloseDocument();
 
@@ -133,9 +135,8 @@ private:
     // the activate/deactivate capture pattern; `selfNodeId` excludes the owning
     // node from NodeRef dropdowns.
     using CommitFn = std::function<void(const nlohmann::json&, const nlohmann::json&)>;
-    void DrawPropertyControl(void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
-                             const Deki::PropertyInfo& p, const std::string& editKey,
-                             uint32_t selfNodeId, const CommitFn& commit);
+    void DrawPropertyControl(void* instance, const DekiNodeGraph::DekiNodeMeta& meta, const Deki::PropertyInfo& p,
+                             const std::string& editKey, uint32_t selfNodeId, const CommitFn& commit);
     // Chevron button + popup listing the open scene's objects, optionally
     // filtered to those carrying `componentFilter`. Call right after the name
     // field it belongs to; `onPick` receives the chosen object NAME ("" = the
@@ -146,17 +147,15 @@ private:
     // A PropertyRef property: three labeled rows (object / component / field),
     // each a dropdown over what actually exists, so an invalid reference cannot
     // be authored. Commits the whole reference as one undo step.
-    void DrawPropertyRefControl(const Deki::PropertyInfo& p, void* instance,
-                                const std::string& label, const std::string& editKey,
-                                const CommitFn& commit);
+    void DrawPropertyRefControl(const Deki::PropertyInfo& p, void* instance, const std::string& label,
+                                const std::string& editKey, const CommitFn& commit);
 
     // A DEKI_VALUE_OF String property: the literal written to / compared with
     // whatever its PropertyRef points at, drawn typed to that field (drag for
     // numbers, checkbox for bool, dropdown for enums) and stored as canonical
     // text. Falls back to a plain text field while nothing is picked yet.
-    void DrawTypedLiteralControl(const Deki::PropertyInfo& p, void* instance,
-                                 const DekiNodeGraph::DekiNodeMeta& meta, const std::string& editKey,
-                                 const CommitFn& commit);
+    void DrawTypedLiteralControl(const Deki::PropertyInfo& p, void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
+                                 const std::string& editKey, const CommitFn& commit);
     void DrawPropertyWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
     void DrawWeightsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
     // Dynamic-outputs String array (e.g. FSM transition events): rows rename in
@@ -228,13 +227,18 @@ private:
     // Live preview state. m_Preview is opaque: it is created and destroyed by
     // the domain's own ops, and this window never looks inside it.
     void* m_Preview = nullptr;
-    const NodeGraphPreviewOps* m_PreviewOps = nullptr;   // the ops that created it
-    bool  m_PreviewPlaying = true;
-    bool  m_PreviewCollapsed = false;
-    float m_PreviewZoom = 48.0f;   // preview pixels per world meter
+    const NodeGraphPreviewOps* m_PreviewOps = nullptr;  // the ops that created it
+    bool m_PreviewPlaying = true;
+    bool m_PreviewCollapsed = false;
+    float m_PreviewZoom = 48.0f;  // preview pixels per world meter
 
     // Unsaved-changes confirmation: what to do after Save/Discard.
-    enum class ConfirmAction { None, CloseWindow, OpenPending };
+    enum class ConfirmAction
+    {
+        None,
+        CloseWindow,
+        OpenPending
+    };
     ConfirmAction m_ConfirmAction = ConfirmAction::None;
     bool m_ConfirmPopupPending = false;
     // Set by Save/Discard when the confirmation was for closing the window.
@@ -256,4 +260,4 @@ private:
     bool m_ErrorPopupPending = false;
 };
 
-} // namespace DekiEditor
+}  // namespace DekiEditor
