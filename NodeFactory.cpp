@@ -7,8 +7,8 @@ namespace SceneFormat
 
 NodeFactory& NodeFactory::Instance()
 {
-    static NodeFactory instance;
-    return instance;
+    static NodeFactory s_Instance;
+    return s_Instance;
 }
 
 }  // namespace SceneFormat

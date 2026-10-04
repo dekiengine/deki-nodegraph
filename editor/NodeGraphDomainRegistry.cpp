@@ -7,8 +7,8 @@ using namespace DekiNodeGraph;
 
 NodeGraphDomainRegistry& NodeGraphDomainRegistry::Instance()
 {
-    static NodeGraphDomainRegistry instance;
-    return instance;
+    static NodeGraphDomainRegistry s_Instance;
+    return s_Instance;
 }
 
 void NodeGraphDomainRegistry::Register(const DekiNodeGraphDomain* domain)

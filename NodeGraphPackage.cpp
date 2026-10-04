@@ -16,9 +16,9 @@
 #include "deki-nodegraph/DekiNode.h"
 #include <deki/LogSystem.h>
 
-extern void DekiNodeGraph_RegisterComponents();
-extern int DekiNodeGraph_GetAutoComponentCount();
-extern const Deki::ComponentMeta* DekiNodeGraph_GetAutoComponentMeta(int index);
+extern void DekiNodeGraphRegisterComponents();
+extern int DekiNodeGraphGetAutoComponentCount();
+extern const Deki::ComponentMeta* DekiNodeGraphGetAutoComponentMeta(int index);
 
 namespace DekiNodeGraph
 {
@@ -37,27 +37,27 @@ using namespace DekiNodeGraph;
 
 extern "C"
 {
-    DEKI_NODEGRAPH_API int DekiNodeGraph_EnsureRegistered(void)
+    DEKI_NODEGRAPH_API int DekiNodeGraphEnsureRegistered(void)
     {
 #ifdef DEKI_EDITOR
         if (s_NodeGraphRegistered)
         {
-            return ::DekiNodeGraph_GetAutoComponentCount();
+            return ::DekiNodeGraphGetAutoComponentCount();
         }
         s_NodeGraphRegistered = true;
-        ::DekiNodeGraph_RegisterComponents();
-        return ::DekiNodeGraph_GetAutoComponentCount();
+        ::DekiNodeGraphRegisterComponents();
+        return ::DekiNodeGraphGetAutoComponentCount();
 #else
         return 0;
 #endif
     }
 
-    DEKI_PLUGIN_API const char* DekiPlugin_GetName(void)
+    DEKI_PLUGIN_API const char* DekiPluginGetName(void)
     {
         return "Deki Node Graph Package";
     }
 
-    DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
+    DEKI_PLUGIN_API const char* DekiPluginGetVersion(void)
     {
 #ifdef DEKI_PACKAGE_VERSION
         return DEKI_PACKAGE_VERSION;
@@ -66,39 +66,39 @@ extern "C"
 #endif
     }
 
-    DEKI_PLUGIN_API int DekiPlugin_Init(void)
+    DEKI_PLUGIN_API int DekiPluginInit(void)
     {
         return 0;
     }
 
-    DEKI_PLUGIN_API void DekiPlugin_Shutdown(void)
+    DEKI_PLUGIN_API void DekiPluginShutdown(void)
     {
         s_NodeGraphRegistered = false;
     }
 
 #ifdef DEKI_EDITOR
-    DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
+    DEKI_PLUGIN_API int DekiPluginGetComponentCount(void)
     {
-        return ::DekiNodeGraph_GetAutoComponentCount();
+        return ::DekiNodeGraphGetAutoComponentCount();
     }
-    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int index)
+    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPluginGetComponentMeta(int index)
     {
-        return ::DekiNodeGraph_GetAutoComponentMeta(index);
+        return ::DekiNodeGraphGetAutoComponentMeta(index);
     }
 #else
-    DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
+    DEKI_PLUGIN_API int DekiPluginGetComponentCount(void)
     {
         return 0;
     }
-    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int)
+    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPluginGetComponentMeta(int)
     {
         return nullptr;
     }
 #endif
 
-    DEKI_PLUGIN_API void DekiPlugin_RegisterComponents(void)
+    DEKI_PLUGIN_API void DekiPluginRegisterComponents(void)
     {
-        DekiNodeGraph_EnsureRegistered();
+        DekiNodeGraphEnsureRegistered();
     }
 
 #ifdef DEKI_EDITOR
@@ -112,10 +112,10 @@ extern "C"
      * clean up after itself.
      *
      * Consumers repopulate on the way back up: full reloads rerun their static
-     * registrars, plugin-only reloads go through ::DekiPlugin_RegisterComponents
-     * (see deki-fsm's DekiFsm_RegisterGraphTypes).
+     * registrars, plugin-only reloads go through ::DekiPluginRegisterComponents
+     * (see deki-fsm's DekiFsmRegisterGraphTypes).
      */
-    DEKI_PLUGIN_API void DekiPlugin_ClearRegistries(void)
+    DEKI_PLUGIN_API void DekiPluginClearRegistries(void)
     {
         SceneFormat::NodeFactory::Instance().Clear();
         NodeTypeRegistry::Instance().Clear();

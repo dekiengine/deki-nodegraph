@@ -22,7 +22,7 @@
 
 // For ImGui TYPES only (the tree-node flags SchematicCollapsingHeader takes).
 // This package must never CALL ImGui: a package DLL links its own copy, whose
-// context pointer is null unless the package exports DekiPlugin_SetImGuiContext,
+// context pointer is null unless the package exports DekiPluginSetImGuiContext,
 // so the first such call dereferences null. Everything goes through EditorUI
 // and EditorTheme, which run inside deki-editor.dll where the context lives.
 #include "imgui.h"
@@ -182,7 +182,7 @@ const Deki::PropertyInfo* FindProperty(const DekiNodeMeta& meta, const char* nam
 }
 
 // Editor label for a node type: its explicit display name (the node's
-// StaticNodeDisplayName member), else the raw name nicified
+// kStaticNodeDisplayName member), else the raw name nicified
 // (camelCase/snake_case -> Title Case) so nodes without one still read well.
 std::string NodeDisplayName(const DekiNodeMeta* meta)
 {
@@ -1146,7 +1146,7 @@ void NodeGraphEditorWindow::DrawNodeGizmo(const NodeGraphDocNode& node)
     // reads as a mistake.
     float availW = 0.0f, availH = 0.0f;
     ui.GetContentRegionAvail(&availW, &availH);
-    availW -= Metrics::InspectorRightPad * dpi;
+    availW -= Metrics::kInspectorRightPad * dpi;
     if (availW < 32.0f * dpi)
     {
         return;
@@ -1828,7 +1828,7 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node, const Deki::P
     ui.GetCursorScreenPos(&contentX, nullptr);
     float bandAvailW = 0.0f;
     ui.GetContentRegionAvail(&bandAvailW, nullptr);
-    const float contentRight = contentX + bandAvailW - Metrics::InspectorRightPad * dpi;
+    const float contentRight = contentX + bandAvailW - Metrics::kInspectorRightPad * dpi;
 
     // Zero trailing spacing for the band: ImGui adds ItemSpacing.y after every
     // item it submits, taken from the style in force at that moment, and that

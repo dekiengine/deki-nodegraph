@@ -53,7 +53,7 @@ struct DekiNodeMeta
     // still-running (not-yet-rebuilt) editor. New fields go at the end so a stale
     // editor reads the fields it knows at correct offsets and ignores the rest
     // (same rule as Deki::PropertyInfo::physicalUnit trailing its struct).
-    const char* displayName;                 // editor label (StaticNodeDisplayName), or
+    const char* displayName;                 // editor label (kStaticNodeDisplayName), or
                                              // nullptr to derive from name
     const char* childCategory = nullptr;     // full category of child node types this node
                                              // stacks (StaticNodeChildCategory), or nullptr
@@ -74,7 +74,7 @@ struct DekiNodeMeta
                                              // instance's inner graph as its entry point
                                              // (nullptr/"" = seed nothing).
     const char* description = nullptr;       // one line on what this node DOES
-                                             // (StaticNodeDescription). Shown under the
+                                             // (kStaticNodeDescription). Shown under the
                                              // name in the add picker, where a list of
                                              // near-identical names is otherwise a guess.
 };

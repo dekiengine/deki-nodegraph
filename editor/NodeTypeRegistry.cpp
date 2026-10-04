@@ -12,8 +12,8 @@ using namespace DekiNodeGraph;
 
 NodeTypeRegistry& NodeTypeRegistry::Instance()
 {
-    static NodeTypeRegistry instance;
-    return instance;
+    static NodeTypeRegistry s_Instance;
+    return s_Instance;
 }
 
 void NodeTypeRegistry::Register(const DekiNodeMeta* meta, size_t metaSize)
