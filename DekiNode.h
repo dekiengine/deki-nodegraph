@@ -1,21 +1,21 @@
 #pragma once
 
-/**
- * @file DekiNode.h
- * @brief Node-type metadata (DekiNodeMeta) + self-registration macros for the
- *        standalone node-graph tool. Independent of components/scenes.
- *
- * A node type is a plain reflected struct marked DEKI_NODE (see DekiProperty.h)
- * with DEKI_EXPORT fields. The codegen emits, per node:
- *   - a runtime `bool DeserializeMsgPack(T&, SceneMsgPackParser&, uint32_t)` (all platforms)
- *   - editor-only GetProperties()/GetPropertyCount()/GetNodeMeta()
- *   - REGISTER_RUNTIME_NODE(T) + (editor) REGISTER_NODE(T), inline in T.gen.cpp
- * so new node types self-register from their owning DLL with no editor rebuild.
- */
+// Node type metadata (DekiNodeMeta) and the self-registration macros for the
+// node graph tool. Separate from components and scenes.
+//
+// A node type is a plain reflected struct marked DEKI_NODE (see DekiProperty.h)
+// with DEKI_EXPORT fields. For each node the codegen emits:
+//   - a runtime `bool DeserializeMsgPack(T&, SceneMsgPackParser&, uint32_t)` (all platforms)
+//   - editor-only GetProperties()/GetPropertyCount()/GetNodeMeta()
+//   - REGISTER_RUNTIME_NODE(T) and (editor) REGISTER_NODE(T), inline in T.gen.cpp
+// so new node types register from their own DLL with no editor rebuild.
 
 #include <deki/reflection/Property.h>
 #include "deki-nodegraph/NodeFactory.h"
-#include <deki/Component.h>  // DekiHashString/DekiHashStringLen: used by the
+// For DekiHashString/DekiHashStringLen, used by the registration macros below
+// and by every generated node .gen.cpp. Included here because package DLLs
+// have no precompiled header to supply it.
+#include <deki/Component.h>
 
 #ifdef DEKI_EDITOR
 #include "deki-nodegraph/NodeTypeRegistry.h"
@@ -24,14 +24,8 @@
 
 namespace DekiNodeGraph
 {
-// registration macros below AND by every
-// generated node .gen.cpp — this header must be
-// self-contained (package DLLs have no PCH that
-// would supply it transitively)
 
-/**
- * @brief Static metadata for one node type (editor-only; drives the node canvas).
- */
+/// Metadata for one node type (editor only; drives the node canvas).
 struct DekiNodeMeta
 {
     const char* name;                      // node type name (StaticNodeName); stable id
@@ -48,11 +42,11 @@ struct DekiNodeMeta
     void* (*createFunc)();               // new T()
     void (*destroyFunc)(void*);          // delete (T*)p
     size_t instanceSize;                 // sizeof(T)
-    // APPEND-ONLY past this point. The editor reads plugin-provided metas across
-    // hot reload; inserting a field mid-struct shifts offsets and crashes the
-    // still-running (not-yet-rebuilt) editor. New fields go at the end so a stale
-    // editor reads the fields it knows at correct offsets and ignores the rest
-    // (same rule as Deki::PropertyInfo::physicalUnit trailing its struct).
+    // APPEND-ONLY past this point. The editor reads metas from plugins across
+    // hot reload, and a field inserted mid-struct shifts offsets and crashes an
+    // editor not yet rebuilt. New fields go at the end, so an older editor reads
+    // the fields it knows and ignores the rest (as with
+    // Deki::PropertyInfo::physicalUnit).
     const char* displayName;                 // editor label (kStaticNodeDisplayName), or
                                              // nullptr to derive from name
     const char* childCategory = nullptr;     // full category of child node types this node
@@ -73,17 +67,16 @@ struct DekiNodeMeta
     const char* subgraphEntry = nullptr;     // StaticNodeName of the node seeded inside every
                                              // instance's inner graph as its entry point
                                              // (nullptr/"" = seed nothing).
-    const char* description = nullptr;       // one line on what this node DOES
-                                             // (kStaticNodeDescription). Shown under the
-                                             // name in the add picker, where a list of
-                                             // near-identical names is otherwise a guess.
+    const char* description = nullptr;       // one line on what the node does
+                                             // (kStaticNodeDescription), shown under the
+                                             // name in the add picker
 };
 
 // ---------------------------------------------------------------------------
 // Self-registration (emitted inline in each node's .gen.cpp).
 // ---------------------------------------------------------------------------
 
-// Runtime (all platforms): register create/deserialize/destroy in NodeFactory.
+// Runtime (all platforms): registers create/deserialize/destroy in NodeFactory.
 // DeserializeMsgPack(T&, ...) is the generated free function (declared in T.gen.h).
 #define REGISTER_RUNTIME_NODE(ClassName)                                                                               \
     static struct ClassName##_NodeFactoryRegistrar                                                                     \
@@ -98,7 +91,7 @@ struct DekiNodeMeta
         }                                                                                                              \
     } s_##ClassName##_NodeFactoryRegistrar
 
-// Editor: register metadata in NodeTypeRegistry (add-node menu + inspector).
+// Editor: registers the metadata in NodeTypeRegistry (add-node menu, inspector).
 #ifdef DEKI_EDITOR
 #define REGISTER_NODE(ClassName)                                                                                       \
     static struct ClassName##_NodeRegistrar                                                                            \
@@ -113,10 +106,10 @@ struct DekiNodeMeta
 #define REGISTER_NODE(ClassName) /* editor-only */
 #endif
 
-// Editor: register a node-graph domain from the owning package/project DLL.
-// Declares which .asset type is a node graph, which category domain scopes its
-// node set, and which node type new graphs are seeded with. Place at file scope
-// in an editor-only translation unit (hand-written, not generated).
+// Editor: registers a node graph domain from the owning package or project
+// DLL: which .asset type is a node graph, which category domain its nodes come
+// from, and which node type new graphs start with. Place it at file scope in an
+// editor-only, hand-written source file.
 #ifdef DEKI_EDITOR
 #define REGISTER_NODE_GRAPH_DOMAIN(VarName, AssetType, Display, DomainKey, EntryType)                                  \
     static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{ AssetType, Display, DomainKey, EntryType };             \
@@ -125,9 +118,9 @@ struct DekiNodeMeta
         VarName##_DomainRegistrar() { ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); }       \
     } s_##VarName##_DomainRegistrar
 
-// Same, plus a live preview (NodeGraphPreviewOps) so the Node Graph window
-// offers a Preview panel for this domain. `PreviewOps` is any expression
-// yielding a NodeGraphPreviewOps.
+// The same, plus a live preview (NodeGraphPreviewOps), so the Node Graph
+// window offers a Preview panel for this domain. `PreviewOps` is any
+// expression giving a NodeGraphPreviewOps.
 #define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps)              \
     static const ::DekiNodeGraph::DekiNodeGraphDomain VarName{ AssetType, Display, DomainKey, EntryType, PreviewOps }; \
     static struct VarName##_DomainRegistrar                                                                            \
@@ -135,7 +128,7 @@ struct DekiNodeMeta
         VarName##_DomainRegistrar() { ::DekiNodeGraph::NodeGraphDomainRegistry::Instance().Register(&VarName); }       \
     } s_##VarName##_DomainRegistrar
 
-// Same again, plus per-node gizmos (NodeGraphNodeGizmoOps) so the
+// The same again, plus per-node gizmos (NodeGraphNodeGizmoOps), so the
 // properties panel can illustrate the selected node.
 #define REGISTER_NODE_GRAPH_DOMAIN_PREVIEW_GIZMOS(VarName, AssetType, Display, DomainKey, EntryType, PreviewOps,       \
                                                   GizmoOps)                                                            \

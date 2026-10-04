@@ -17,7 +17,7 @@ void NodeGraphDomainRegistry::Register(const DekiNodeGraphDomain* domain)
     {
         return;
     }
-    // Dedup by asset type (re-registration on hot-reload).
+    // One per asset type; hot reload registers again.
     if (m_ByAssetType.count(domain->assetTypeName))
     {
         return;

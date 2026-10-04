@@ -13,41 +13,34 @@ namespace DekiNodeGraph
 
 #ifdef DEKI_EDITOR
 
-/**
- * @file NodeGraphDomainRegistry.h
- * @brief Editor-only registry of node-graph domains: which .asset types are
- *        node graphs, and which node categories belong to each graph type.
- *
- * A domain is registered by the owning package/project DLL (via
- * REGISTER_NODE_GRAPH_DOMAIN in DekiNode.h), never hardcoded in the editor.
- * The generic NodeGraphEditorWindow claims an asset type iff a domain exists
- * for it, and filters NodeTypeRegistry to node metas whose category's first
- * path segment ("Domain/MenuGroup") equals the domain's domainKey.
- * Clear() is called on package/plugin hot-reload teardown so no stale pointers
- * survive FreeLibrary.
- */
+// Editor-only registry of node graph domains: which .asset types are node
+// graphs, and which node categories belong to each.
+//
+// The owning package or project DLL registers a domain (with
+// REGISTER_NODE_GRAPH_DOMAIN in DekiNode.h); the editor hardcodes none.
+// NodeGraphEditorWindow opens an asset type only if a domain exists for it,
+// and offers the node types whose category's first segment
+// ("Domain/MenuGroup") is the domain's domainKey. Clear() runs on hot-reload
+// teardown, so no pointers into an unloaded DLL survive.
 
-/**
- * @brief One node-graph domain (all strings are static storage in the owning DLL).
- */
+/// One node graph domain. Its strings live in the owning DLL's static storage.
 struct DekiNodeGraphDomain
 {
     const char* assetTypeName;      // .asset "type" + AssetManager loader key
-    const char* displayName;        // human-readable ("Hero Behavior Graph")
-    const char* domainKey;          // category first-segment filter ("HeroBehavior")
-    const char* entryNodeTypeName;  // node type new graphs seed with ("FsmEntry")
+    const char* displayName;        // for people ("Hero Behavior Graph")
+    const char* domainKey;          // first category segment of its nodes ("HeroBehavior")
+    const char* entryNodeTypeName;  // node type new graphs start with ("FsmEntry")
 
-    // APPEND-ONLY past this point, same rule as DekiNodeMeta: the editor reads
-    // domains provided by package DLLs across hot reload, so a field inserted
-    // mid-struct would shift offsets under a still-running editor.
+    // APPEND-ONLY past this point, as in DekiNodeMeta: the editor reads domains
+    // from package DLLs across hot reload, so a field inserted mid-struct would
+    // shift offsets under a running editor.
 
-    // Optional live preview (see NodeGraphPreview.h). All-null = no Preview
-    // panel for this domain, which is the default for a domain that has
-    // nothing meaningful to show while you edit it.
+    // Optional live preview (see NodeGraphPreview.h). All null means no
+    // Preview panel for this domain.
     NodeGraphPreviewOps preview{};
 
     // Optional per-node illustration in the properties panel (see
-    // NodeGraphNodeGizmoOps). Null = the panel is fields only, as before.
+    // NodeGraphNodeGizmoOps). Null means the panel shows fields only.
     NodeGraphNodeGizmoOps gizmos{};
 };
 
@@ -60,10 +53,10 @@ public:
 
     const DekiNodeGraphDomain* Get(const std::string& assetTypeName) const;
 
-    // All registered domains, in registration order.
+    /// Every registered domain, in registration order.
     const std::vector<const DekiNodeGraphDomain*>& GetAll() const { return m_Domains; }
 
-    // Remove every registered domain (hot-reload teardown).
+    /// Removes every domain, for hot-reload teardown.
     void Clear();
 
 private:

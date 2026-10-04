@@ -24,9 +24,8 @@ void NodeTypeRegistry::Register(const DekiNodeMeta* meta, size_t metaSize)
     }
     if (metaSize != sizeof(DekiNodeMeta))
     {
-        // Deliberately does NOT read meta->name: the whole point is that this
-        // struct's layout is not the one we compiled against, so every field
-        // past the first divergence is garbage.
+        // Does not read meta->name: this struct's layout differs from ours,
+        // so its fields cannot be trusted.
         if (!m_LayoutMismatch)
         {
             m_LayoutMismatch = true;
@@ -43,7 +42,7 @@ void NodeTypeRegistry::Register(const DekiNodeMeta* meta, size_t metaSize)
         }
         return;
     }
-    // Dedup by type id (re-registration on hot-reload, or a duplicate name).
+    // One per type id; hot reload registers again, and names may repeat.
     if (m_ByType.count(meta->typeId))
     {
         return;

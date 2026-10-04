@@ -1,16 +1,13 @@
-/**
- * @file NodeGraphPackage.cpp
- * @brief Package entry point for the deki-nodegraph DLL.
- *
- * deki-nodegraph owns the whole node-graph feature: the runtime container
- * (NodeGraphData) and factory that every platform needs, plus the editor-side
- * registries, document, undo commands and the generic Node Graph window.
- *
- * It declares no node types and no components of its own. Node types and graph
- * domains come from the packages and project DLLs that consume it (deki-fsm's
- * states and actions, a game's own nodes) via DEKI_NODE / the registration
- * macros in DekiNode.h.
- */
+// Package entry point for the deki-nodegraph DLL.
+//
+// deki-nodegraph holds the whole node graph feature: the runtime container
+// (NodeGraphData) and factory every platform needs, and the editor's
+// registries, document, undo commands and generic Node Graph window.
+//
+// It declares no node types or components of its own. Node types and graph
+// domains come from the packages and project DLLs that use it (deki-fsm's
+// states and actions, a game's own nodes), through DEKI_NODE and the
+// registration macros in DekiNode.h.
 
 #include <deki/interop/Plugin.h>
 #include "deki-nodegraph/DekiNode.h"
@@ -24,8 +21,8 @@ namespace DekiNodeGraph
 {
 
 #ifdef DEKI_EDITOR
-// Auto-generated registration helpers (no components, but the codegen always
-// emits the trio so the plugin interface below has something to call).
+// The codegen emits the three registration helpers declared above even with
+// no components, so the plugin interface below has something to call.
 #endif
 
 static bool s_NodeGraphRegistered = false;
@@ -102,19 +99,16 @@ extern "C"
     }
 
 #ifdef DEKI_EDITOR
-    /**
-     * @brief Drop every registered node type, factory thunk and graph domain.
-     *
-     * The editor calls this on each loaded package before it unloads plugin or
-     * package DLLs: the registries hold meta and thunk pointers INTO those DLLs,
-     * and reading them after FreeLibrary is a crash. Owning the wipe here is what
-     * keeps the editor free of node-graph knowledge — it just asks every package to
-     * clean up after itself.
-     *
-     * Consumers repopulate on the way back up: full reloads rerun their static
-     * registrars, plugin-only reloads go through ::DekiPluginRegisterComponents
-     * (see deki-fsm's DekiFsmRegisterGraphTypes).
-     */
+    /// Drops every registered node type, factory thunk and graph domain.
+    ///
+    /// The editor calls this on each loaded package before it unloads plugin
+    /// or package DLLs: the registries hold pointers into those DLLs, and
+    /// reading them after FreeLibrary crashes. Doing it here keeps node graph
+    /// knowledge out of the editor, which only asks each package to clean up.
+    ///
+    /// Users register again afterwards: a full reload reruns their static
+    /// registrars, a plugin-only reload goes through
+    /// ::DekiPluginRegisterComponents (see deki-fsm's DekiFsmRegisterGraphTypes).
     DEKI_PLUGIN_API void DekiPluginClearRegistries(void)
     {
         SceneFormat::NodeFactory::Instance().Clear();
@@ -123,6 +117,6 @@ extern "C"
     }
 #endif
 
-    // Infrastructure package — no systems to install into the engine at load.
+    // No engine systems to install at load.
 
 }  // extern "C"

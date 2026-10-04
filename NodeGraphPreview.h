@@ -9,26 +9,23 @@ namespace DekiNodeGraph
 
 #ifdef DEKI_EDITOR
 
-/**
- * @file NodeGraphPreview.h
- * @brief Optional live preview for a node-graph domain (editor-only).
- *
- * The Node Graph window knows nothing about what any domain's nodes MEAN, so
- * it cannot preview them itself. A domain that can show its graph running
- * supplies these hooks; the window then offers a Preview panel, ticks it with
- * the editor's frame delta, and hands it a rectangle to draw in.
- *
- * The graph passed to Tick is the LIVE document being edited, not the saved
- * asset, so the preview reflects an edit the moment it is made. It is a flat
- * view of one graph level (the root): the same {id, typeId, instance} + link
- * shape the runtime loader produces, so a domain's interpreter can walk either
- * with the same code.
- *
- * Drawing goes through Canvas rather than the provider calling the editor's UI
- * directly: package DLLs share the editor's ImGui context only by pointer, and
- * a preview provider has no business touching it. Coordinates are absolute
- * screen pixels and the window has already clipped to the preview rect.
- */
+// Optional live preview for a node graph domain (editor only).
+//
+// The Node Graph window does not know what any domain's nodes mean, so it
+// cannot preview them itself. A domain that can show its graph running
+// supplies these hooks; the window then offers a Preview panel, ticks it with
+// the editor's frame delta, and gives it a rectangle to draw in.
+//
+// The graph passed to Tick is the live document being edited, not the saved
+// asset, so the preview shows an edit at once. It is a flat view of one graph
+// level (the root), in the same {id, typeId, instance} and link shape the
+// runtime loader produces, so a domain's interpreter can walk either with the
+// same code.
+//
+// Drawing goes through the canvas, not the editor's UI: package DLLs share the
+// editor's ImGui context only by pointer, and a preview has no reason to touch
+// it. Coordinates are absolute screen pixels, already clipped to the preview
+// rect.
 
 struct NodeGraphPreviewNode
 {
@@ -53,7 +50,7 @@ struct NodeGraphPreviewGraph
     const NodeGraphPreviewLink* links = nullptr;
     int linkCount = 0;
 
-    // The first node of `typeId`, or nullptr. Mirrors NodeGraphData::Graph.
+    /// The first node of `typeId`, or nullptr. As in NodeGraphData::Graph.
     const NodeGraphPreviewNode* FindFirstOfType(uint32_t typeId) const
     {
         for (int i = 0; i < nodeCount; ++i)
@@ -66,7 +63,7 @@ struct NodeGraphPreviewGraph
         return nullptr;
     }
 
-    // Follow the link leaving (nodeId, fromPin). Mirrors NodeGraphData::Graph.
+    /// Follows the link leaving (nodeId, fromPin). As in NodeGraphData::Graph.
     const NodeGraphPreviewNode* Next(uint32_t nodeId, int32_t fromPin) const
     {
         for (int i = 0; i < linkCount; ++i)
@@ -87,9 +84,9 @@ struct NodeGraphPreviewGraph
     }
 };
 
-// Pack a color for the primitives below. Byte order matches EditorUI::Rgba
-// (and ImGui's IM_COL32), which is NOT the 0xRRGGBBAA a reader would guess:
-// use this rather than shifting by hand.
+/// Packs a colour for the primitives below. The byte order is EditorUI::Rgba's
+/// (and ImGui's IM_COL32), not the 0xRRGGBBAA a reader would guess, so use this
+/// rather than shifting by hand.
 inline uint32_t NodeGraphPreviewRgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
 {
     return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) |
@@ -106,52 +103,45 @@ struct NodeGraphPreviewCanvas
     void (*line)(void* ctx, float x0, float y0, float x1, float y1, uint32_t rgba, float thickness) = nullptr;
 };
 
-/**
- * @brief Per-node illustration, drawn in the properties panel under the
- *        selected node's title (editor-only, optional).
- *
- * A number in a field says what a value IS; it does not say what it LOOKS like.
- * A domain that can picture one of its nodes - an emitter's shape, a ramp, a
- * gradient, a force vector - supplies these and the panel gives that node a
- * band to draw it in, refreshed as the fields underneath are edited.
- *
- * Same rules as the preview above: the instance is the LIVE node struct, and
- * drawing goes through NodeGraphPreviewCanvas rather than the editor's UI,
- * because a provider lives in another DLL. Coordinates are absolute screen
- * pixels, and the window has clipped to the band before calling.
- */
+/// Optional per-node illustration, drawn in the properties panel under the
+/// selected node's title (editor only).
+///
+/// A domain that can picture one of its nodes (an emitter's shape, a ramp, a
+/// gradient, a force vector) supplies these, and the panel gives that node a
+/// band to draw in, redrawn as its fields are edited.
+///
+/// The same rules as the preview above: the instance is the live node struct,
+/// and drawing goes through NodeGraphPreviewCanvas, since the provider lives in
+/// another DLL. Coordinates are absolute screen pixels, clipped to the band.
 struct NodeGraphNodeGizmoOps
 {
-    // Height in CSS px this node wants, or 0 for "nothing to show" (which is
-    // the answer for most node types). Asked every frame with the live
-    // instance, so a node can size itself by its own values.
+    // The height in CSS px this node wants, or 0 for nothing to show (most
+    // node types). Asked every frame with the live instance, so a node can
+    // size itself by its values.
     float (*height)(uint32_t typeId, const void* instance) = nullptr;
 
-    // Draw into (x, y, w, h), screen pixels. `dpi` is the editor's scale, for
-    // line thickness and anything else measured in pixels rather than in the
-    // band's own proportions.
+    // Draws into (x, y, w, h), in screen pixels. `dpi` is the editor's scale,
+    // for line thickness and anything else measured in pixels rather than in
+    // proportion to the band.
     void (*draw)(uint32_t typeId, const void* instance, float x, float y, float w, float h, float dpi,
                  const NodeGraphPreviewCanvas& canvas) = nullptr;
 };
 
-/**
- * @brief A domain's preview implementation. All four hooks are required for
- *        the window to offer a preview; a domain that leaves them null simply
- *        has no Preview panel.
- */
+/// A domain's preview. The window offers a Preview panel only when all four
+/// hooks are set.
 struct NodeGraphPreviewOps
 {
     // One preview instance per open document.
     void* (*create)() = nullptr;
     void (*destroy)(void* preview) = nullptr;
 
-    // Back to the starting state (the transport's Restart).
+    // Returns to the starting state (the transport's Restart).
     void (*reset)(void* preview) = nullptr;
 
-    // Advance by dt seconds and draw. (x, y) is the top-left of the preview
-    // rect in screen pixels, (w, h) its size; pixelsPerMeter converts the
-    // domain's world units to that rect. dt is 0 when the transport is paused,
-    // which must still draw the current state.
+    // Advances by dt seconds and draws. (x, y) is the preview rect's top-left
+    // in screen pixels, (w, h) its size; pixelsPerMeter converts the domain's
+    // world units to it. dt is 0 while paused, and the current state must
+    // still be drawn.
     void (*tick)(void* preview, const NodeGraphPreviewGraph& graph, float dt, float x, float y, float w, float h,
                  float pixelsPerMeter, const NodeGraphPreviewCanvas& canvas) = nullptr;
 };

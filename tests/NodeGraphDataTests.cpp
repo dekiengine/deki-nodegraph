@@ -1,11 +1,10 @@
-// The graph queries an interpreter walks, and the loader's refusal of junk.
+// The graph queries an interpreter uses, and the loader refusing junk.
 //
 // Graph::FindNode / FindFirstOfType / Next are the whole traversal API: an
 // interpreter finds its entry node by type, then follows Next() from pin to
-// pin. Their edge cases are the ones a malformed or hand-edited graph
-// produces -- a link to a node that is not there, two links off one output
-// pin, a self-link -- and each of those has a defined answer that a rewrite
-// must not change.
+// pin. Their edge cases come from malformed or hand-edited graphs (a link to
+// a missing node, two links off one output pin, a self-link), and each has a
+// defined answer that a rewrite must keep.
 //
 // LoadFromMemory parses a compiled blob on the device, where the input is
 // whatever was flashed. It must return nullptr rather than reach into a
@@ -18,7 +17,7 @@
 #include <cstdint>
 #include <vector>
 
-// The package's types moved into its namespace; tests name them unqualified.
+// The package's types live in DekiNodeGraph; the tests name them unqualified.
 using namespace DekiNodeGraph;
 
 namespace
@@ -65,8 +64,8 @@ TEST(NodeGraphQueries, FindNodeReturnsNullForAnIdThatIsNotThere)
 
 TEST(NodeGraphQueries, FindFirstOfTypeReturnsTheEarliestMatch)
 {
-    // Two nodes share type 200; an interpreter looking for its entry node
-    // takes the first, so document order is the tie-break and is load-bearing.
+    // Two nodes share type 200. An interpreter looking for its entry node
+    // takes the first, so document order breaks the tie and must hold.
     const Graph g = Chain();
     const Node* n = g.FindFirstOfType(200);
     ASSERT_NE(n, nullptr);
@@ -99,8 +98,8 @@ TEST(NodeGraphQueries, NextReturnsNullAtTheEndOfAChain)
 
 TEST(NodeGraphQueries, NextDistinguishesPins)
 {
-    // Pin number is half the key. A node with two outputs must not have one
-    // pin answer for the other, which is what makes a branch node work.
+    // The pin number is half the key. A node with two outputs must not have
+    // one pin answer for the other; branch nodes depend on it.
     Graph g;
     g.nodes = { MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300) };
     g.links = { Link{ 1, 0, 2, 0 }, Link{ 1, 1, 3, 0 } };
@@ -114,9 +113,8 @@ TEST(NodeGraphQueries, NextDistinguishesPins)
 
 TEST(NodeGraphQueries, NextTakesTheFirstOfSeveralLinksOnOnePin)
 {
-    // The editor does not produce this, but a hand-edited or migrated graph
-    // can. Documented behaviour is first-wins, and it has to stay decidable
-    // rather than becoming "whichever the container happens to yield".
+    // The editor never makes this, but a hand-edited or migrated graph can.
+    // The first link wins, always, not whichever the container yields.
     Graph g;
     g.nodes = { MakeNode(1, 100), MakeNode(2, 200), MakeNode(3, 300) };
     g.links = { Link{ 1, 0, 2, 0 }, Link{ 1, 0, 3, 0 } };
@@ -128,8 +126,8 @@ TEST(NodeGraphQueries, NextTakesTheFirstOfSeveralLinksOnOnePin)
 
 TEST(NodeGraphQueries, NextReturnsNullWhenTheLinkPointsAtAMissingNode)
 {
-    // A dangling link is the shape a partial delete leaves behind. Next() has
-    // to answer null rather than hand back a pointer into nothing.
+    // A dangling link, as a partial delete leaves behind. Next() must return
+    // null, not a pointer into nothing.
     Graph g;
     g.nodes = { MakeNode(1, 100) };
     g.links = { Link{ 1, 0, 42, 0 } };
@@ -138,8 +136,8 @@ TEST(NodeGraphQueries, NextReturnsNullWhenTheLinkPointsAtAMissingNode)
 
 TEST(NodeGraphQueries, ASelfLinkResolvesToTheNodeItself)
 {
-    // Not useful, but it must terminate rather than recurse: Next() is one
-    // step, so a caller's own loop guard is what stops a cycle.
+    // Not useful, but it must return rather than recurse: Next() is one step,
+    // and the caller's own loop guard stops a cycle.
     Graph g;
     g.nodes = { MakeNode(1, 100) };
     g.links = { Link{ 1, 0, 1, 0 } };
@@ -176,9 +174,9 @@ TEST(NodeGraphLoad, RefusesABlobWhoseRootIsNotAMap)
 
 TEST(NodeGraphLoad, RefusesATruncatedBlobWithoutReadingPastTheEnd)
 {
-    // A fixmap claiming one pair, with nothing after it. Under ASan or on a
-    // device this is the case that reads off the end if the parser trusts the
-    // declared size.
+    // A fixmap claiming one pair, with nothing after it. A parser that trusts
+    // the declared size reads past the end here (caught by ASan, or not at
+    // all on a device).
     const uint8_t truncated[] = { 0x81 };
     EXPECT_EQ(NodeGraphData::LoadFromMemory(truncated, sizeof(truncated)), nullptr);
 
@@ -189,8 +187,8 @@ TEST(NodeGraphLoad, RefusesATruncatedBlobWithoutReadingPastTheEnd)
 
 TEST(NodeGraphLoad, RefusesRandomBytesOfEveryLength)
 {
-    // Not a fuzzer, but enough to catch a parser that dereferences before it
-    // bounds-checks: every prefix of a byte pattern with no valid structure.
+    // Not a fuzzer, but enough to catch a parser that reads before it checks
+    // bounds: every prefix of a byte pattern with no valid structure.
     const uint8_t junk[] = { 0xde, 0xad, 0xbe, 0xef, 0xff, 0x00, 0x81, 0xc1,
                              0xdd, 0xff, 0xff, 0xff, 0xff, 0xa0, 0x7f, 0xcb };
     for (size_t n = 1; n <= sizeof(junk); ++n)

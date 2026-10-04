@@ -1,47 +1,42 @@
 #pragma once
 
-/**
- * @file NodeGraphData.h
- * @brief Runtime container for a compiled node-graph asset (all platforms).
- *
- * A node-graph .asset is authored as JSON by the editor's NodeGraphEditorWindow
- * and compiled to MessagePack by the generic data-asset path (json::to_msgpack
- * minus the "type" key). This class parses that MessagePack into type-erased
- * node instances (via NodeFactory) plus a link table. Interpretation of pins
- * and links is entirely up to the consuming tool's interpreter; this container
- * is domain-agnostic.
- *
- * Wire schema (keys in nlohmann's alphabetical order):
- *   { "links":      [ { "from": u32, "fromPin": i32, "to": u32, "toPin": i32 }, ... ],
- *     "nextNodeId": u32,   // editor-side id counter; preserved but unused at runtime
- *     "nodes":      [ { "children": [ { "enabled": bool, "type": "...", "values": { ... } }, ... ],
- *                       "graph": { "links": [ ... ], "nodes": [ ... ] },
- *                       "id": u32, "type": "NodeTypeName", "values": { ... },
- *                       "x": f, "y": f }, ... ] }
- *
- * Within a node map the alphabetical order children < graph < id < type <
- * values < x < y guarantees "type" is read (instance created) before "values"
- * (instance populated) in a single sequential parse; the same enabled < type <
- * values ordering holds inside each child map. A file where "values" precedes
- * "type" is corrupt and fails the load loudly.
- *
- * A node carries at most one of two kinds of contents:
- *   - "children": the optional ordered STACK of child node instances a parent
- *     owns (DEKI_NODE_CHILDREN — e.g. an FSM graph's variable declarations).
- *     Children are full NodeFactory instances but take no part in any link table.
- *   - "graph": the optional INNER GRAPH a parent owns (DEKI_NODE_SUBGRAPH — e.g.
- *     an FSM state's action flow, or a group of states). An inner graph is a
- *     Graph exactly like the root, nested to any depth, with its own links.
- *
- * Node ids are unique across the WHOLE document, not just within one graph, so
- * an id identifies one node however deep it sits. Link endpoints always name
- * nodes in the SAME graph as the link, so pin-following never leaves its graph;
- * crossing a boundary is the interpreter's job (descend into a node's inner
- * graph, or ascend out of it).
- *
- * Loading is all-or-nothing: any error destroys every already-created instance
- * and returns nullptr. No partial graphs.
- */
+// Runtime container for a compiled node graph asset (all platforms).
+//
+// The editor's NodeGraphEditorWindow writes a node graph .asset as JSON, and
+// the generic data-asset path compiles it to MessagePack (json::to_msgpack
+// without the "type" key). This class parses that into type-erased node
+// instances (through NodeFactory) and a link table. What pins and links mean
+// is up to the tool's interpreter; the container knows no domain.
+//
+// Wire schema (keys in nlohmann's alphabetical order):
+//   { "links":      [ { "from": u32, "fromPin": i32, "to": u32, "toPin": i32 }, ... ],
+//     "nextNodeId": u32,   // editor's id counter; kept but unused at runtime
+//     "nodes":      [ { "children": [ { "enabled": bool, "type": "...", "values": { ... } }, ... ],
+//                       "graph": { "links": [ ... ], "nodes": [ ... ] },
+//                       "id": u32, "type": "NodeTypeName", "values": { ... },
+//                       "x": f, "y": f }, ... ] }
+//
+// In a node map the alphabetical order children < graph < id < type < values
+// < x < y means "type" is read (instance created) before "values" (instance
+// filled) in one pass; the same enabled < type < values order holds in each
+// child map. A file where "values" comes before "type" is corrupt and fails to
+// load with an error.
+//
+// A node carries at most one of two kinds of contents:
+//   - "children": an ordered stack of child node instances the parent owns
+//     (DEKI_NODE_CHILDREN, such as an FSM graph's variable declarations).
+//     Children are full NodeFactory instances but have no links.
+//   - "graph": an inner graph the parent owns (DEKI_NODE_SUBGRAPH, such as an
+//     FSM state's action flow, or a group of states). An inner graph is a Graph
+//     like the root, nested to any depth, with its own links.
+//
+// Node ids are unique across the whole document, so an id names one node
+// however deep it sits. A link's ends are always in the link's own graph, so
+// following pins never leaves a graph; crossing into or out of an inner graph
+// is the interpreter's job.
+//
+// Loading is all-or-nothing: any error destroys every instance created so far
+// and returns nullptr.
 
 #include "deki-nodegraph/NodeGraphApi.h"
 
@@ -57,12 +52,12 @@ class DEKI_NODEGRAPH_API NodeGraphData
 public:
     // One child in a node's ordered stack (see DEKI_NODE_CHILDREN). Children
     // are NodeFactory instances like top-level nodes but have no id and no
-    // links; interpretation (e.g. "these are the variables") is the consumer's.
+    // links; what they mean ("these are the variables") is up to the consumer.
     struct ChildInstance
     {
         uint32_t typeId = 0;       // Deki::HashString(child type name)
-        void* instance = nullptr;  // NodeFactory-created struct, populated from "values"
-        bool enabled = true;       // authoring toggle; disabled children are data only
+        void* instance = nullptr;  // made by NodeFactory, filled from "values"
+        bool enabled = true;       // editor toggle; disabled children are data only
     };
 
     struct Graph;
@@ -71,9 +66,9 @@ public:
     {
         uint32_t id = 0;           // document-unique node id (link endpoints)
         uint32_t typeId = 0;       // Deki::HashString(node type name)
-        void* instance = nullptr;  // NodeFactory-created struct, populated from "values"
-        // Appended last (same cross-DLL append-only rule as DekiNodeMeta): a
-        // stale reader still finds id/typeId/instance at their old offsets.
+        void* instance = nullptr;  // made by NodeFactory, filled from "values"
+        // Appended last (the append-only rule of DekiNodeMeta), so an older
+        // reader still finds id/typeId/instance at their offsets.
         std::vector<ChildInstance> children;
         Graph* inner = nullptr;  // DEKI_NODE_SUBGRAPH contents (owned), or nullptr
     };
@@ -86,8 +81,8 @@ public:
         int32_t toPin = 0;
     };
 
-    // One graph level: the document root, or any node's inner graph. Every
-    // query is scoped to this level, because every link is.
+    /// One graph level: the document root, or a node's inner graph. Every
+    /// query stays within this level, as every link does.
     struct DEKI_NODEGRAPH_API Graph
     {
         std::vector<NodeInstance> nodes;
@@ -96,16 +91,15 @@ public:
         const NodeInstance* FindNode(uint32_t id) const;
         const NodeInstance* FindFirstOfType(uint32_t typeId) const;
 
-        // Follow the link leaving (nodeId, fromPin). Returns the destination
-        // node in THIS graph, or nullptr if no such link exists. If multiple
-        // links share one output pin (not produced by the editor), the first
-        // one wins.
+        /// Follows the link leaving (nodeId, fromPin) to its node in this
+        /// graph, or nullptr if there is none. If several links leave one pin
+        /// (the editor never makes that), the first wins.
         const NodeInstance* Next(uint32_t nodeId, int32_t fromPin) const;
     };
 
-    // Parse a compiled node-graph MessagePack blob. Returns nullptr (after
-    // DEKI_LOG_ERROR) on any structural error, unknown node type, or failed
-    // node deserialization.
+    /// Parses a compiled node graph MessagePack blob. Logs an error and
+    /// returns nullptr on a structural error, an unknown node type, or a node
+    /// that fails to deserialize.
     static NodeGraphData* LoadFromMemory(const uint8_t* data, size_t size);
 
     ~NodeGraphData();
@@ -113,10 +107,10 @@ public:
     NodeGraphData(const NodeGraphData&) = delete;
     NodeGraphData& operator=(const NodeGraphData&) = delete;
 
-    // The top-level graph. Inner graphs are reached through NodeInstance::inner.
+    /// The top-level graph. Inner graphs are reached through NodeInstance::inner.
     const Graph& Root() const { return m_Root; }
 
-    // Root-level shorthands (an interpreter that never descends uses only these).
+    /// Shorthands for the root graph, for interpreters that never descend.
     const std::vector<NodeInstance>& Nodes() const { return m_Root.nodes; }
     const std::vector<Link>& Links() const { return m_Root.links; }
     const NodeInstance* FindNode(uint32_t id) const { return m_Root.FindNode(id); }

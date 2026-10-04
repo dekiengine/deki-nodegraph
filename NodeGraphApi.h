@@ -1,14 +1,14 @@
 #pragma once
 
-// DLL export macro, in its own header so intra-package headers (NodeFactory,
+// DLL export macro, in its own header so the package's headers (NodeFactory,
 // NodeTypeRegistry, NodeGraphDomainRegistry, NodeGraphData) can use it without
-// pulling in the DekiNode.h aggregator, which includes them.
+// including DekiNode.h, which includes them.
 //
-// The node registries are shared singletons: node types self-register from
+// The node registries are shared singletons: node types register from
 // whichever package or project DLL owns them (deki-fsm's states and actions, a
-// game's own nodes), so every consumer must reach the ONE instance living in
-// deki-nodegraph.dll. On embedded / runtime static-link builds there are no
-// DLLs and this collapses to nothing.
+// game's own nodes), so every user must reach the one instance in
+// deki-nodegraph.dll. Static runtime builds (embedded) have no DLLs and the
+// macro is empty.
 #ifdef DEKI_EDITOR
 #ifdef _WIN32
 #ifdef DEKI_NODEGRAPH_EXPORTS

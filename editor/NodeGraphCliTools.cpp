@@ -1,22 +1,19 @@
-/**
- * @file NodeGraphCliTools.cpp
- * @brief Command-line / MCP tools that author node-graph assets.
- *
- * The editor knows nothing about node graphs, so the tools that build one come
- * with the package that defines them (deki-editor/CliTool.h). They open the
- * asset as a NodeGraphDocument - the same model, the same validation and the
- * same save format the Node Graph window uses - make one change, and save.
- *
- * Node ids are document-wide, so a node is named by its id however deep it
- * sits. A caller may pick ids (graph_add_node's `id`, and `entry_id` for the
- * entry a subgraph node is seeded with), which is what lets a `--script` wire
- * nodes it has just added without reading earlier results back.
- *
- * The rules the window's menus enforce are enforced here too: a node's type
- * must belong to the graph's domain and to the canvas it goes on (actions only
- * inside a state), permanent nodes are seeded rather than added, and a link
- * joins two nodes on one canvas through pins that exist.
- */
+// Command-line and MCP tools that edit node graph assets.
+//
+// The editor knows nothing about node graphs, so these tools come with this
+// package (see deki-editor/CliTool.h). Each opens the asset as a
+// NodeGraphDocument (the model, validation and save format the Node Graph
+// window uses), makes one change, and saves.
+//
+// Node ids are document-wide, so a node is named by its id however deep it
+// sits. A caller may choose ids (graph_add_node's `id`, and `entry_id` for the
+// entry node a subgraph starts with), so a `--script` can link nodes it just
+// added without reading earlier results back.
+//
+// The rules the window's menus enforce apply here too: a node's type must
+// belong to the graph's domain and to its canvas (actions only inside a
+// state), permanent nodes are created with the graph rather than added, and a
+// link joins two nodes on one canvas through pins that exist.
 #ifdef DEKI_EDITOR
 
 #include <deki-editor/CliTool.h>
@@ -59,8 +56,9 @@ std::string DomainOf(const char* category)
     return slash ? std::string(category, slash - category) : std::string(category);
 }
 
-// Categories that only ever appear inside something: a child stack's entries,
-// and a subgraph's contents when they differ from the owner's own category.
+// True for categories that only appear inside another node: a child stack's
+// entries, and a subgraph's contents when their category differs from the
+// owner's.
 bool IsInnerOnlyCategory(const char* category)
 {
     for (const DekiNodeMeta* meta : NodeTypeRegistry::Instance().GetAllNodes())
@@ -141,8 +139,8 @@ bool Save(const CliToolContext& ctx, OpenGraph& graph, std::string& error)
     return true;
 }
 
-// An enum field may be given by its name ("SineOut"), as the inspector shows
-// it; the document stores the index. Anything else passes through as given.
+// An enum field may be given by name ("SineOut"), as the inspector shows it;
+// the document stores the index. Other values pass through unchanged.
 bool ResolveEnumNames(const DekiNodeMeta& meta, json& values, std::string& error)
 {
     for (int i = 0; i < meta.propertyCount; ++i)
@@ -245,7 +243,7 @@ bool ResolvePin(const NodeGraphDocument& doc, const NodeGraphDocNode& node, cons
     return true;
 }
 
-// Base for the tools: parse, run, report.
+// Base for the tools: parse the arguments, run, report.
 class GraphTool : public CliTool
 {
 public:
@@ -624,8 +622,8 @@ protected:
     }
 };
 
-// Point the Node Graph window at part of the graph it has open - for a
-// screenshot, or to hand a person the exact place to look.
+// Points the Node Graph window at part of its open graph, for a screenshot
+// or to show a person where to look.
 class GraphViewTool : public CliTool
 {
 public:

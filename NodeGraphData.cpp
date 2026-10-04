@@ -16,7 +16,7 @@ using SceneFormat::NodeFactory;
 namespace
 {
 
-// Read a msgpack string into a std::string (key or short value).
+// Reads a msgpack string (a key or short value) into a std::string.
 bool ReadStdString(SceneMsgPackParser& parser, std::string& out)
 {
     const char* str = nullptr;
@@ -31,8 +31,8 @@ bool ReadStdString(SceneMsgPackParser& parser, std::string& out)
 
 void DestroyGraph(NodeGraphData::Graph& graph);
 
-// Destroy a partially-built node (own instance, children, and inner graph
-// created so far). Recursive: an inner graph's nodes may have inner graphs.
+// Destroys a partly built node: its instance, children and inner graph so far.
+// Recursive, since an inner graph's nodes may have inner graphs.
 void DestroyPartialNode(NodeGraphData::NodeInstance& node)
 {
     auto& factory = NodeFactory::Instance();
@@ -67,10 +67,10 @@ void DestroyGraph(NodeGraphData::Graph& graph)
     graph.links.clear();
 }
 
-// Parse one child map ({enabled, type, values} — alphabetical, so "type"
-// creates the instance before "values" populates it, mirroring ParseNode).
-// On success appends to `node.children`; on failure logs and returns false
-// (any instance created here is destroyed by the caller via DestroyPartialNode).
+// Parses one child map ({enabled, type, values}, alphabetical, so "type"
+// creates the instance before "values" fills it, as in ParseNode). Appends to
+// `node.children`, or logs and returns false; the caller's DestroyPartialNode
+// then destroys any instance made here.
 bool ParseChild(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::NodeInstance& node)
 {
     NodeGraphData::ChildInstance child;
@@ -167,8 +167,8 @@ bool ParseChild(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Nod
 
 bool ParseGraph(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Graph& graph);
 
-// Parse one node map. On success appends to `graph.nodes`; on failure logs and
-// returns false (caller destroys everything already created).
+// Parses one node map and appends it to `graph.nodes`, or logs and returns
+// false; the caller then destroys everything created so far.
 bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Graph& graph)
 {
     NodeGraphData::NodeInstance node;
@@ -204,11 +204,10 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
                 DestroyPartialNode(node);
                 return false;
             }
-            // Exact size up front: growth would otherwise double its way there,
-            // leaving up to half the block as slack and copying the children
-            // already parsed at every step. Same reasoning at every reserve in
-            // this file - on a device with a few hundred KB of heap the slack
-            // and the churn both matter more than the parse time does.
+            // Exact size up front: growing would leave up to half the block
+            // unused and copy the children at each step. The same holds for
+            // every reserve in this file; on a device with a few hundred KB of
+            // heap, the waste and the copying matter more than parse time.
             node.children.reserve(count);
             for (uint32_t c = 0; c < count; ++c)
             {
@@ -228,9 +227,9 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
         }
         else if (key == "graph")
         {
-            // Inner graph (DEKI_NODE_SUBGRAPH). Parsed exactly like the root,
-            // to any depth; "graph" sorts before "type", but nothing in here
-            // depends on the owning node's instance.
+            // Inner graph (DEKI_NODE_SUBGRAPH), parsed like the root, to any
+            // depth. "graph" sorts before "type", but nothing here needs the
+            // owning node's instance.
             uint32_t innerSize = 0;
             if (!parser.ReadMapSize(innerSize))
             {
@@ -267,8 +266,8 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
         }
         else if (key == "values")
         {
-            // Alphabetical key order guarantees "type" precedes "values"; a file
-            // violating that is corrupt.
+            // Alphabetical key order puts "type" before "values"; a file
+            // where it does not is corrupt.
             if (!node.instance)
             {
                 DEKI_LOG_ERROR("NodeGraphData: node 'values' encountered before 'type' (corrupt asset)");
@@ -291,7 +290,7 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
         }
         else
         {
-            // x / y (editor layout) and future keys: skip.
+            // x / y (editor layout) and unknown keys are skipped.
             if (!parser.SkipValue())
             {
                 DEKI_LOG_ERROR("NodeGraphData: failed to skip node key '%s'", key.c_str());
@@ -312,7 +311,7 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
     return true;
 }
 
-// Parse one link map ({"from", "fromPin", "to", "toPin"} in any order).
+// Parses one link map ({"from", "fromPin", "to", "toPin"} in any order).
 bool ParseLink(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Link& out)
 {
     for (uint32_t i = 0; i < mapSize; ++i)
@@ -354,9 +353,9 @@ bool ParseLink(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Link
     return true;
 }
 
-// Parse one graph map ("nodes" + "links"). Shared by the document root and
-// every inner graph; the root additionally carries "nextNodeId", which is an
-// editor-side counter and is skipped here like any other unknown key.
+// Parses one graph map ("nodes" and "links"), for the root and every inner
+// graph. The root also has "nextNodeId", an editor counter, skipped like any
+// unknown key.
 bool ParseGraph(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Graph& graph)
 {
     for (uint32_t i = 0; i < mapSize; ++i)
@@ -377,8 +376,8 @@ bool ParseGraph(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Gra
                 return false;
             }
             // Reserved, not grown: a NodeInstance owns vectors, so every
-            // reallocation moves all of them, and the leftover capacity is the
-            // most expensive slack in the graph.
+            // reallocation moves them all, and unused capacity here is the
+            // costliest in the graph.
             graph.nodes.reserve(count);
             for (uint32_t n = 0; n < count; ++n)
             {
@@ -421,7 +420,7 @@ bool ParseGraph(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Gra
         }
         else
         {
-            // nextNodeId (editor counter) and future keys: skip.
+            // nextNodeId (editor counter) and unknown keys are skipped.
             if (!parser.SkipValue())
             {
                 DEKI_LOG_ERROR("NodeGraphData: failed to skip graph key '%s'", key.c_str());
@@ -454,7 +453,7 @@ NodeGraphData* NodeGraphData::LoadFromMemory(const uint8_t* data, size_t size)
     NodeGraphData* graph = new NodeGraphData();
     if (!ParseGraph(parser, rootSize, graph->m_Root))
     {
-        delete graph;  // destroys any already-created instances
+        delete graph;  // destroys the instances created so far
         return nullptr;
     }
     return graph;

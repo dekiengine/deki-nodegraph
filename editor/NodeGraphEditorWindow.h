@@ -22,19 +22,16 @@ struct DekiNodeMeta;
 namespace DekiEditor
 {
 
-/**
- * @brief Generic node-graph editor window (Tools > Node Graph).
- *
- * Lives in deki-nodegraph.dll together with the node registries it drives, so
- * editing the canvas never rebuilds the engine or the editor. Undo
- * (CommandHistory) and the schematic theme come from deki-editor.dll; the
- * NodeCanvas view widget stays there too.
- *
- * Claims any .asset whose JSON "type" is a registered node-graph domain
- * (NodeGraphDomainRegistry); the add-node menu is scoped to node types whose
- * category's first path segment matches the domain. The window itself knows
- * nothing about any specific tool's node set.
- */
+/// The generic node graph editor window (Tools > Node Graph).
+///
+/// Lives in deki-nodegraph.dll with the node registries it uses, so changing
+/// it never rebuilds the engine or the editor. Undo (CommandHistory), the
+/// theme and the NodeCanvas widget come from deki-editor.dll.
+///
+/// Opens any .asset whose JSON "type" is a registered node graph domain
+/// (NodeGraphDomainRegistry); the add-node menu offers the node types whose
+/// category's first segment is the domain's. The window knows nothing about
+/// any tool's node set.
 class NodeGraphEditorWindow : public EditorWindow
 {
 public:
@@ -45,14 +42,14 @@ public:
     ~NodeGraphEditorWindow() override;
 
     // ---- For the command line (graph_view in NodeGraphCliTools.cpp) ----
-    // The window instance, or null when none exists (created by the tool host,
-    // destroyed on hot reload).
+    /// The window, or null when there is none (the tool host creates it; hot
+    /// reload destroys it).
     static NodeGraphEditorWindow* Live();
-    // The open graph asset's path, or "" when none is open.
+    /// The open graph asset's path, or "" when none is open.
     std::string OpenAssetPath() const;
-    // Put the graph owned by `canvasOwner` (0 = the root) on the canvas, going
-    // in through every node above it, and select `node` (0 = nothing) - what
-    // double-clicking down to it and clicking it would do.
+    /// Shows the graph owned by `canvasOwner` (0 = the root) on the canvas,
+    /// entering every node above it, and selects `node` (0 = nothing), as
+    /// double-clicking down to it and clicking it would.
     bool ShowCanvas(uint32_t canvasOwner, uint32_t node, std::string& error);
 
     void OnGUI() override;
@@ -60,8 +57,8 @@ public:
     bool CanOpenAssetType(const char* assetType) override;
     void OpenFile(const char* filePath, const char* cachePath) override;
 
-    // EditorWindow session hooks: survive hot reload (node instances die with
-    // the DLLs; state crosses the reload as plain JSON).
+    /// Session hooks for hot reload: node instances die with the DLLs, so the
+    /// state crosses the reload as plain JSON.
     bool SaveSession(std::string& outJson) override;
     void RestoreSession(const std::string& json) override;
 
@@ -80,23 +77,20 @@ private:
     void DrawModals();
 
     // ---- Live preview (NodeGraphPreview.h) ----
-    // Only drawn for a domain that supplies preview ops; the window itself has
-    // no idea what any graph does. The instance belongs to the domain's DLL, so
-    // it must die before that DLL can go away: CloseDocument and SaveSession
-    // (the pre-hot-reload hook) both destroy it.
+    // Drawn only for a domain that supplies preview ops. The instance belongs
+    // to the domain's DLL, so it must be destroyed before that DLL unloads:
+    // CloseDocument and SaveSession (run before hot reload) both do.
     //
-    // Drawn as an overlay pinned to the bottom-left of the canvas, over the
-    // graph rather than beside it, so the effect and the nodes producing it are
-    // in one field of view. Submitted after the canvas so its controls take
-    // hover priority over the canvas's pan/select surface.
+    // Drawn over the canvas's bottom-left corner, so the effect and the nodes
+    // making it are in view together. Drawn after the canvas so its controls
+    // get the hover before the canvas's pan and select.
     void DrawPreviewOverlay(float canvasX, float canvasY, float canvasW, float canvasH);
     void DestroyPreview();
 
     // ---- Per-node gizmo (NodeGraphNodeGizmoOps) ----
-    // The picture of the selected node - a shape, a ramp, a gradient - drawn
-    // between its title and its fields, for a domain that supplies gizmo ops.
-    // Silent (draws nothing, takes no space) for a node that has none, which is
-    // the normal case.
+    // A picture of the selected node (a shape, a ramp, a gradient) between its
+    // title and its fields, for a domain that supplies gizmo ops. Takes no
+    // space for a node without one, which is most of them.
     void DrawNodeGizmo(const NodeGraphDocNode& node);
     void HandleCanvasEvents(const NodeCanvasEvents& events);
     void DeleteSelection();
@@ -108,18 +102,19 @@ private:
     const NodeGraphDocGraph& OpenGraph() const;
     // Id of the node owning the open graph (0 = root), i.e. where new nodes go.
     uint32_t OpenGraphOwner() const { return m_GraphPath.empty() ? 0u : m_GraphPath.back(); }
-    // Descend into a subgraph node (no-op for a node without one), or pop back
-    // out to `depth` levels of nesting (0 = root). Both reset selection and
-    // reframe the canvas on the graph they land in.
+    // Enters a subgraph node (nothing happens for a node without one), or goes
+    // back out to `depth` levels of nesting (0 = root). Both clear the
+    // selection and frame the canvas on the new graph.
     void EnterSubgraph(uint32_t nodeId);
     void NavigateToDepth(size_t depth);
-    // Drop any trailing path entries whose node no longer exists (undo of an
-    // add, a delete while inside, hot reload). Keeps the canvas on a real graph.
+    // Drops trailing path entries whose node no longer exists (after undoing
+    // an add, a delete while inside, or hot reload), so the canvas stays on a
+    // real graph.
     void ValidateGraphPath();
 
-    // The selected node's verbs (Open its subgraph / Delete it) as a toolbar
-    // strip. Returns true when it acted on something that leaves the node
-    // invalid, i.e. the caller must stop drawing the panel this frame.
+    // The selected node's actions (Open its subgraph, Delete it) as a toolbar
+    // strip. Returns true when the action left the node invalid, so the caller
+    // must stop drawing the panel this frame.
     bool DrawNodeActionsToolbar(NodeGraphDocNode& node);
 
     // The node's title block: its title property as the heading with the type
@@ -129,18 +124,18 @@ private:
     // name and nothing is editable.
     void DrawNodeHeader(NodeGraphDocNode& node, const Deki::PropertyInfo* titleProp);
 
-    // Property widgets. DrawPropertyControl is the shared value editor for any
-    // reflected instance (node or child): `commit` receives (old, new) JSON and
-    // pushes the right command; `editKey` uniquely identifies the control for
-    // the activate/deactivate capture pattern; `selfNodeId` excludes the owning
-    // node from NodeRef dropdowns.
+    // Property widgets. DrawPropertyControl edits a value of any reflected
+    // instance (node or child): `commit` receives (old, new) JSON and pushes the
+    // right command; `editKey` identifies the control for capturing the old
+    // value on activate; `selfNodeId` leaves the owning node out of NodeRef
+    // dropdowns.
     using CommitFn = std::function<void(const nlohmann::json&, const nlohmann::json&)>;
     void DrawPropertyControl(void* instance, const DekiNodeGraph::DekiNodeMeta& meta, const Deki::PropertyInfo& p,
                              const std::string& editKey, uint32_t selfNodeId, const CommitFn& commit);
-    // Chevron button + popup listing the open scene's objects, optionally
-    // filtered to those carrying `componentFilter`. Call right after the name
-    // field it belongs to; `onPick` receives the chosen object NAME ("" = the
-    // object the graph runs on), which is what the runtime resolves.
+    // A chevron button and popup listing the open scene's objects, optionally
+    // only those with `componentFilter`. Call it right after its name field;
+    // `onPick` receives the chosen object's name ("" = the object the graph
+    // runs on), which is what the runtime looks up.
     void DrawObjectNamePicker(const char* componentFilter, const std::string& current,
                               const std::function<void(const std::string&)>& onPick);
 
@@ -150,22 +145,23 @@ private:
     void DrawPropertyRefControl(const Deki::PropertyInfo& p, void* instance, const std::string& label,
                                 const std::string& editKey, const CommitFn& commit);
 
-    // A DEKI_VALUE_OF String property: the literal written to / compared with
-    // whatever its PropertyRef points at, drawn typed to that field (drag for
-    // numbers, checkbox for bool, dropdown for enums) and stored as canonical
-    // text. Falls back to a plain text field while nothing is picked yet.
+    // A DEKI_VALUE_OF String property: the value written to, or compared with,
+    // whatever its PropertyRef points at. Drawn to suit that field (drag for
+    // numbers, checkbox for bool, dropdown for enums) and stored as text. A
+    // plain text field while nothing is picked.
     void DrawTypedLiteralControl(const Deki::PropertyInfo& p, void* instance, const DekiNodeGraph::DekiNodeMeta& meta,
                                  const std::string& editKey, const CommitFn& commit);
     void DrawPropertyWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
     void DrawWeightsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
-    // Dynamic-outputs String array (e.g. FSM transition events): rows rename in
-    // place; add/remove resizes pins (ResizeDynamicOutputsCommand prunes links).
+    // A dynamic-outputs String array (FSM transition events, say): rows rename
+    // in place; add and remove change the pins (ResizeDynamicOutputsCommand
+    // removes their links).
     void DrawTransitionsWidget(NodeGraphDocNode& node, const Deki::PropertyInfo& p);
     // Ordered child stack (DEKI_NODE_CHILDREN): PlayMaker-style action list.
     void DrawChildStack(NodeGraphDocNode& node);
 
-    // Canvas title: meta->titleProperty's String value when set and non-empty,
-    // else the type display name.
+    // The canvas title: the meta->titleProperty value when set and not empty,
+    // else the type's display name.
     std::string NodeTitle(const NodeGraphDocNode& node) const;
 
     // One variable declared by this document (DEKI_NODE_VARIABLES): the child's
@@ -175,57 +171,57 @@ private:
         std::string name;
         Deki::PropertyType type = Deki::PropertyType::Float;
     };
-    // Every variable the open document declares, in stack order (empty when the
-    // domain has no variables node or nothing is declared yet).
+    // Every variable the open document declares, in stack order. Empty when
+    // the domain has no variables node or none are declared.
     std::vector<GraphVariable> CollectGraphVariables() const;
 
-    // Guarantee every permanent node type of the document's domain exists
-    // (fixed lifecycle nodes like an FSM's Awake/Start/Update). Runs after
-    // load/restore; seeds missing ones and marks the document dirty.
+    // Makes sure every permanent node type of the domain exists (fixed
+    // lifecycle nodes like an FSM's Awake/Start/Update). Runs after load and
+    // restore; adds missing ones and marks the document dirty.
     void EnsurePermanentNodes();
 
     std::shared_ptr<NodeGraphDocument> m_Doc;
     NodeCanvas m_Canvas;
 
-    // Canvas size the current pan was computed for, so a resize can be absorbed
-    // into it (see DrawCanvas). 0 = no previous size yet (first draw).
+    // Canvas size the pan was set for, so a resize can adjust it (see
+    // DrawCanvas). 0 before the first draw.
     float m_CanvasPannedForW = 0.0f;
     float m_CanvasPannedForH = 0.0f;
 
-    // Selection (by id/index into the doc, never pointers). A link index is an
-    // index into the OPEN graph's link vector, so it is only valid for the
-    // graph the canvas is showing — navigating clears it.
+    // Selection, by id or index, never by pointer. A link index is into the
+    // open graph's links, so it is valid only for the graph on the canvas;
+    // navigating clears it.
     uint32_t m_SelectedNode = 0;
     int m_SelectedLink = -1;
 
-    // Drill-down trail: node ids from the root down to the open graph's owner.
-    // Empty = editing the root graph. Survives hot reload via the session JSON.
+    // Node ids from the root down to the open graph's owner; empty at the
+    // root. Kept across hot reload in the session JSON.
     std::vector<uint32_t> m_GraphPath;
 
-    // Add-node context menu state (OpenPopup deferred to the parent ID scope).
+    // Add-node context menu (OpenPopup waits for the parent ID scope).
     bool m_AddMenuPending = false;
     float m_AddMenuGraphX = 0.0f;
     float m_AddMenuGraphY = 0.0f;
 
-    // Property-edit commit tracking: value captured when a widget activates.
+    // The property being edited and its value when the widget activated.
     std::string m_EditingProperty;
     nlohmann::json m_EditingOldValue;
 
-    // Inline rename in the title block: the node whose heading is currently a
-    // field instead of a label (0 = none), and whether that field still owes
-    // itself keyboard focus (it is created the frame after the click).
+    // Rename in the title block: the node whose heading is a text field (0 =
+    // none), and whether that field still needs keyboard focus (it appears
+    // the frame after the click).
     uint32_t m_RenamingNode = 0;
     bool m_RenameFocusPending = false;
 
-    // The child-stack add popup is the editor's shared picker; this tells it to
-    // clear the query and take keyboard focus on the frame it opens.
+    // The child-stack add popup is the editor's shared picker; this tells it
+    // to clear the query and take keyboard focus on the frame it opens.
     bool m_AddChildJustOpened = true;
 
     // Object-name picker search box (one picker is open at a time).
     char m_ObjectPickerSearch[128] = {};
 
-    // Live preview state. m_Preview is opaque: it is created and destroyed by
-    // the domain's own ops, and this window never looks inside it.
+    // Live preview. m_Preview is opaque: the domain's ops create and destroy
+    // it, and this window never looks inside.
     void* m_Preview = nullptr;
     const NodeGraphPreviewOps* m_PreviewOps = nullptr;  // the ops that created it
     bool m_PreviewPlaying = true;
@@ -244,16 +240,17 @@ private:
     // Set by Save/Discard when the confirmation was for closing the window.
     bool m_CloseAfterConfirm = false;
 
-    // The document as it is on disk (ToJson().dump()); "" when it must be
-    // saved anyway (a migrated asset). Unsaved = differs from this, checked
-    // again whenever the undo history moves, so undoing back to the saved
-    // state clears the mark.
+    // The document as on disk (ToJson().dump()); "" when it must be saved
+    // anyway (a migrated asset). Unsaved means different from this, checked
+    // whenever the undo history moves, so undoing back to the saved state
+    // clears the mark.
     std::string m_SavedSnapshot;
     uint64_t m_SnapshotGeneration = 0;
     void TakeSavedSnapshot();
     void RefreshDirtyFromSnapshot();
 
-    // Pending open (waiting on the dirty-check modal) + error modal.
+    // A file waiting to open until the unsaved-changes modal is answered, and
+    // the error modal.
     std::string m_PendingOpenPath;
     std::string m_PendingOpenCache;
     std::string m_ErrorText;

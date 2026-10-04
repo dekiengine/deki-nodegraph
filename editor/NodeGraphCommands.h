@@ -1,18 +1,15 @@
 #pragma once
 
-/**
- * @file NodeGraphCommands.h
- * @brief Undoable edits for NodeGraphDocument (node graph editor window).
- *
- * Every command holds the document via weak_ptr plus PLAIN DATA (ids, JSON,
- * positions) — never node-instance pointers, which die on hot reload. An
- * expired document (window closed, project closed) makes Execute/Undo log an
- * error and no-op instead of touching freed memory.
- *
- * Node property edits do NOT live here: the window's properties panel uses
- * EditorUI value-mode fields, whose recordEdit backend already pushes
- * ModifyValueCommand into CommandHistory with drag-merge semantics.
- */
+// Undoable edits to a NodeGraphDocument, for the Node Graph window.
+//
+// Every command holds the document by weak_ptr plus plain data (ids, JSON,
+// positions), never node instance pointers, which die on hot reload. With the
+// document gone (window or project closed), Execute and Undo log an error and
+// do nothing.
+//
+// Most node property edits are not here: the window's properties panel uses
+// EditorUI value-mode fields, whose recordEdit backend already pushes a
+// ModifyValueCommand (merging a drag into one step).
 
 #include <deki-editor/Command.h>
 #include "deki-nodegraph/editor/NodeGraphDocument.h"
@@ -45,16 +42,13 @@ inline std::shared_ptr<NodeGraphDocument> Lock(const std::weak_ptr<NodeGraphDocu
 }
 }  // namespace NodeGraphCommandDetail
 
-/**
- * @brief Add one node of a given type at a canvas position, inside the graph
- * owned by `ownerNodeId` (0 = the document root — i.e. whichever graph the
- * canvas currently has open).
- *
- * A subgraph node is not one node: AddNode also creates its inner graph and
- * seeds the declared entry node, consuming further ids. Redo therefore replays
- * the captured SUBTREE rather than re-creating a bare node, and undo restores
- * the id counter to its pre-execution value so nothing leaks.
- */
+/// Adds a node of a given type at a canvas position, in the graph owned by
+/// `ownerNodeId` (0 = the document root), which is the graph the canvas has
+/// open.
+///
+/// A subgraph node is more than one node: AddNode also creates its inner graph
+/// and entry node, using more ids. So redo replays the captured subtree rather
+/// than creating a bare node, and undo puts the id counter back to where it was.
 class AddNodeCommand : public Command
 {
 public:
@@ -81,8 +75,8 @@ public:
 
         if (m_NodeId == 0)
         {
-            // First execution: create fresh, then capture the whole subtree so
-            // redo recreates the identical node (inner graph included).
+            // First run: create it, then capture the whole subtree so redo
+            // recreates the same node, inner graph included.
             m_NextIdBefore = doc->nextNodeId;
             m_NodeId = doc->AddNode(m_TypeId, m_X, m_Y, m_Owner);
             if (const NodeGraphDocNode* node = doc->FindNode(m_NodeId))
@@ -104,8 +98,8 @@ public:
             return;
         }
         doc->RemoveNode(m_NodeId);
-        // Undo is LIFO, so every id handed out after this command has already
-        // been given back: rewinding the counter here cannot collide.
+        // Undo runs in reverse order, so every id handed out after this command
+        // is already given back, and rewinding the counter cannot collide.
         if (m_NextIdBefore != 0)
         {
             doc->nextNodeId = m_NextIdBefore;
@@ -126,11 +120,9 @@ private:
     nlohmann::json m_Node;  // full subtree (values + children + inner graph)
 };
 
-/**
- * @brief Delete one node plus every link attached to it in its own graph. The
- * node's whole subtree (child stack and inner graph, recursively) is captured,
- * so undoing the deletion of a group brings back everything inside it.
- */
+/// Deletes a node and every link attached to it in its graph. The node's whole
+/// subtree (child stack and inner graph, recursively) is captured, so undoing
+/// the deletion of a group brings back everything inside it.
 class DeleteNodeCommand : public Command
 {
 public:
@@ -152,7 +144,7 @@ public:
 
         if (const NodeGraphDocNode* node = doc->FindNode(m_NodeId))
         {
-            // Capture full restore state on first execution.
+            // Capture everything needed to restore it on the first run.
             m_Owner = doc->OwnerOf(m_NodeId);
             m_Node = doc->NodeToJson(*node);
             m_Links = doc->AttachedLinks(m_NodeId);
@@ -184,11 +176,9 @@ private:
     std::vector<NodeGraphDocLink> m_Links;
 };
 
-/**
- * @brief One node drag. The window writes live positions directly during the
- * drag (visual feedback) and pushes this once on release; Execute re-applies
- * the end position (idempotent), Undo restores the start position.
- */
+/// One node drag. The window moves the node directly during the drag and
+/// pushes this once on release; Execute applies the end position again (no
+/// change the first time), Undo restores the start position.
 class MoveNodeCommand : public Command
 {
 public:
@@ -211,9 +201,8 @@ public:
         if (doc)
         {
             doc->SetNodePos(m_NodeId, m_NewX, m_NewY);
-            // The drag already wrote the new position live, so SetNodePos saw
-            // no change and left the graph clean: a moved node never asked to
-            // be saved.
+            // The drag already wrote the new position, so SetNodePos saw no
+            // change and did not mark the graph dirty. Mark it here.
             if (m_OldX != m_NewX || m_OldY != m_NewY)
             {
                 doc->dirty = true;
@@ -236,10 +225,8 @@ private:
     float m_OldX, m_OldY, m_NewX, m_NewY;
 };
 
-/**
- * @brief Create a link. Output pins are single-link: an existing link out of
- * the same (fromNode, fromPin) is replaced, and undo restores it.
- */
+/// Creates a link. An output pin has at most one link: an existing link out of
+/// the same (fromNode, fromPin) is replaced, and undo restores it.
 class AddLinkCommand : public Command
 {
 public:
@@ -283,7 +270,7 @@ private:
     bool m_HadReplaced = false;
 };
 
-/** @brief Remove one link. */
+/// Removes one link.
 class RemoveLinkCommand : public Command
 {
 public:
@@ -318,14 +305,12 @@ private:
     NodeGraphDocLink m_Link;
 };
 
-/**
- * @brief Set one reflected property of a node, old/new carried as JSON values.
- *
- * Pushed by the properties panel on commit (drag release / deactivate-after-
- * edit), so one drag = one command. The live drag previews by writing the
- * instance directly; Execute re-applies the committed value (idempotent).
- * JSON-valued so no instance pointer is ever stored.
- */
+/// Sets one reflected property of a node, with old and new values as JSON, so
+/// no instance pointer is stored.
+///
+/// The properties panel pushes it when an edit is committed (drag released,
+/// field left), so one drag is one command. During the drag the instance is
+/// written directly; Execute applies the committed value again.
 class SetNodePropertyCommand : public Command
 {
 public:
@@ -372,15 +357,13 @@ private:
     nlohmann::json m_Old, m_New;
 };
 
-/**
- * @brief Resize a dynamic-output weights vector (add/remove one output pin of
- * an FsmRandom-style node). Shrinking prunes links from now-invalid pins in
- * the same undoable step.
- */
+/// Resizes a dynamic-output weights vector (adds or removes an output pin of an
+/// FsmRandom-style node). Shrinking removes the links from the dropped pins in
+/// the same undo step.
 class SetWeightCountCommand : public Command
 {
 public:
-    // newWeights is the full desired vector (the window builds it).
+    // newWeights is the whole new vector (the window builds it).
     SetWeightCountCommand(std::weak_ptr<NodeGraphDocument> doc, uint32_t nodeId, std::string propertyName,
                           std::vector<float> oldWeights, std::vector<float> newWeights)
         : m_Doc(std::move(doc)),
@@ -408,7 +391,7 @@ public:
             return;
         }
 
-        // Prune links leaving pins that no longer exist.
+        // Remove links leaving pins that no longer exist.
         m_PrunedLinks.clear();
         const int count = static_cast<int>(m_New.size());
         for (const auto& link : doc->AttachedLinks(m_NodeId))
@@ -469,12 +452,10 @@ private:
     std::vector<NodeGraphDocLink> m_PrunedLinks;
 };
 
-/**
- * @brief Resize a dynamic-outputs array property (any element type), pruning
- * links from now-invalid pins in the same undoable step. The String-array
- * variant of SetWeightCountCommand: used for FSM-style transition lists, where
- * pins are labeled by the string values. old/new are full JSON arrays.
- */
+/// Resizes a dynamic-outputs array property (any element type), removing the
+/// links from dropped pins in the same undo step. Like SetWeightCountCommand,
+/// for FSM-style transition lists whose pins are labelled by string values.
+/// Old and new are whole JSON arrays.
 class ResizeDynamicOutputsCommand : public Command
 {
 public:
@@ -505,7 +486,7 @@ public:
             return;
         }
 
-        // Prune links leaving pins that no longer exist.
+        // Remove links leaving pins that no longer exist.
         m_PrunedLinks.clear();
         const int count = static_cast<int>(m_New.size());
         for (const auto& link : doc->AttachedLinks(m_NodeId))
@@ -561,15 +542,12 @@ private:
     std::vector<NodeGraphDocLink> m_PrunedLinks;
 };
 
-/**
- * @brief Remove ONE entry from a dynamic-outputs array, by index.
- *
- * ResizeDynamicOutputsCommand can only append or drop the last pin, because
- * pruning links whose pin index fell off the end is all it does. Removing a
- * pin from the MIDDLE renumbers every pin after it, so the links leaving those
- * pins have to move down with them or they silently point at the wrong
- * transition. That remap is the whole reason this is its own command.
- */
+/// Removes one entry from a dynamic-outputs array, by index.
+///
+/// ResizeDynamicOutputsCommand only adds or drops the last pin. Removing a pin
+/// from the middle renumbers every pin after it, so the links leaving those
+/// pins move down with them; otherwise they would point at the wrong
+/// transition.
 class RemoveDynamicOutputCommand : public Command
 {
 public:
@@ -617,20 +595,20 @@ public:
             return;
         }
 
-        // Every link touching this node's outputs, captured whole so undo can
-        // put the numbering back exactly as it was.
+        // Every link touching this node, captured so undo can put the
+        // numbering back exactly.
         m_OldLinks = doc->AttachedLinks(m_NodeId);
         for (const auto& link : m_OldLinks)
         {
             if (link.fromNode != m_NodeId || link.fromPin < m_Index)
             {
-                continue;  // untouched: inputs and the pins before the hole
+                continue;  // inputs and pins before the removed one stay
             }
             doc->RemoveLink(link);
             if (link.fromPin > m_Index)
             {
                 NodeGraphDocLink moved = link;
-                moved.fromPin = link.fromPin - 1;  // slide down into the hole
+                moved.fromPin = link.fromPin - 1;  // one down, into the gap
                 doc->AddLink(moved);
             }
         }
@@ -649,8 +627,8 @@ public:
             return;
         }
 
-        // Drop the shifted links first, then restore the originals: rebuilding
-        // from the captured set is exact, where un-shifting one by one is not.
+        // Drop the shifted links, then restore the originals: rebuilding from
+        // the captured set is exact, shifting back one by one is not.
         for (const auto& link : doc->AttachedLinks(m_NodeId))
         {
             if (link.fromNode == m_NodeId)
@@ -693,12 +671,12 @@ private:
 };
 
 // ===========================================================================
-// Child stack commands (DEKI_NODE_CHILDREN — e.g. FSM state action lists).
-// Children are addressed by (nodeId, index); every command restores the exact
-// index it acted on, so ordering survives undo/redo.
+// Child stack commands (DEKI_NODE_CHILDREN, such as FSM state action lists).
+// Children are addressed by (nodeId, index); every command restores the index
+// it acted on, so the order survives undo and redo.
 // ===========================================================================
 
-/** @brief Append/insert one default child of a given type. */
+/// Appends one default child of a given type.
 class AddChildCommand : public Command
 {
 public:
@@ -722,7 +700,7 @@ public:
         }
         if (m_Index < 0)
         {
-            // First execution: append and remember where it landed.
+            // First run: append and remember the index.
             m_Index = doc->AddChild(m_NodeId, m_ChildTypeId, -1);
         }
         else
@@ -748,7 +726,7 @@ private:
     int m_Index = -1;
 };
 
-/** @brief Remove one child, restoring its type/values/enabled/index on undo. */
+/// Removes one child; undo restores its type, values, enabled flag and index.
 class RemoveChildCommand : public Command
 {
 public:
@@ -799,7 +777,7 @@ private:
     bool m_Enabled = true;
 };
 
-/** @brief Reorder one child within its stack. */
+/// Moves one child within its stack.
 class MoveChildCommand : public Command
 {
 public:
@@ -837,7 +815,7 @@ private:
     int m_From, m_To;
 };
 
-/** @brief Toggle one child's enabled flag. */
+/// Toggles one child's enabled flag.
 class SetChildEnabledCommand : public Command
 {
 public:
@@ -876,7 +854,7 @@ private:
     bool m_Enabled;
 };
 
-/** @brief Set one reflected property of a child, old/new carried as JSON. */
+/// Sets one reflected property of a child, with old and new values as JSON.
 class SetChildPropertyCommand : public Command
 {
 public:

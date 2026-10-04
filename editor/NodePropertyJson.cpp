@@ -30,7 +30,7 @@ inline const void* FieldPtr(const void* base, const Deki::PropertyInfo& p)
     return static_cast<const char*>(base) + p.offset;
 }
 
-// Enum values live in 1/2/4-byte storage (enumSize); move through int64.
+// Enum values are stored in 1, 2 or 4 bytes (enumSize); read as int64.
 int64_t ReadEnumValue(const void* field, uint8_t enumSize)
 {
     switch (enumSize)
@@ -219,8 +219,8 @@ bool NodePropertiesToJson(const void* instance, const DekiNodeGraph::DekiNodeMet
                 break;
             case Deki::PropertyType::PropertyRef:
             {
-                // Authored form only (object/component/field); the ids are
-                // derived by Rehash on the way back in, never serialized.
+                // Only the authored form (object/component/field); Rehash
+                // derives the ids on load, so they are not saved.
                 const auto* ref = static_cast<const Deki::PropertyRef*>(field);
                 json obj = json::object();
                 obj["object"] = ref->object;
@@ -231,7 +231,7 @@ bool NodePropertiesToJson(const void* instance, const DekiNodeGraph::DekiNodeMet
             }
             case Deki::PropertyType::AssetRef:
             {
-                // Same {guid, source} shape components use.
+                // The {guid, source} shape components use.
                 const auto* ref = static_cast<const Deki::AssetRefBase*>(field);
                 json obj = json::object();
                 obj["guid"] = ref->guid;
@@ -270,7 +270,7 @@ bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& m
         auto it = values.find(p.name);
         if (it == values.end())
         {
-            continue;  // absent -> keep default
+            continue;  // missing: keep the default
         }
 
         if (!IsSupportedType(p))
@@ -369,7 +369,7 @@ bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& m
                     auto* ref = static_cast<Deki::AssetRefBase*>(field);
                     ref->guid = it->value("guid", std::string());
                     ref->source = it->value("source", std::string());
-                    ref->ptr = nullptr;  // re-resolved on next Get()
+                    ref->ptr = nullptr;  // resolved again on the next Get()
                     ref->loadAttempted = false;
                     break;
                 }
@@ -398,7 +398,8 @@ bool NodePropertiesFromJson(void* instance, const DekiNodeGraph::DekiNodeMeta& m
         }
     }
 
-    // Keys with no matching property: forward-compat skip, but say so.
+    // Keys with no matching property are skipped, so newer files load, but
+    // logged.
     for (auto it = values.begin(); it != values.end(); ++it)
     {
         bool known = false;
