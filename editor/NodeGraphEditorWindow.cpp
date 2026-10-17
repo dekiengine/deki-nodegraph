@@ -198,6 +198,8 @@ const Deki::PropertyInfo* FindProperty(const DekiNodeMeta& meta, const char* nam
 // into Title Case. The package that registers the type translates it.
 std::string NodeDisplayName(const DekiNodeMeta* meta)
 {
+    // As the node's own package translates it (deki-fsm's "Add" is arithmetic).
+    const DekiEditor::Localization::ScopedPackage packageText(meta->package);
     if (meta->displayName && meta->displayName[0] != '\0')
     {
         return Tr(meta->displayName);
@@ -251,6 +253,7 @@ const Deki::PropertyInfo* TitleProperty(const NodeGraphDocNode& node)
 // reads the same in the inspector as on screen.
 std::string OutputPinLabel(const NodeGraphDocNode& node, int pin)
 {
+    const DekiEditor::Localization::ScopedPackage packageText(node.meta ? node.meta->package : nullptr);
     if (!node.meta || pin < 0)
     {
         return {};
@@ -1330,6 +1333,7 @@ void NodeGraphEditorWindow::DrawCanvas(float width, float height)
     for (size_t i = 0; i < nodeCount; ++i)
     {
         const NodeGraphDocNode& n = graph.nodes[i];
+        const DekiEditor::Localization::ScopedPackage packageText(n.meta ? n.meta->package : nullptr);
         titles[i] = NodeTitle(n);
         NodeCanvasNode cn;
         cn.id = n.id;
@@ -1660,6 +1664,8 @@ void NodeGraphEditorWindow::DrawPropertiesPanel(float /*width*/, float /*height*
             return;              // entered its subgraph or deleted it
         }
         BeginPropertyContext();
+        // The node's fields and enum values read as its package translates them.
+        const DekiEditor::Localization::ScopedPackage packageText(node->meta->package);
 
         // The title block shows the node's name (click it to rename) with the
         // type under it, so a node is renamed where its name is shown, not in
@@ -1934,6 +1940,7 @@ void NodeGraphEditorWindow::DrawNodeHeader(NodeGraphDocNode& node, const Deki::P
 void NodeGraphEditorWindow::DrawPropertyControl(void* instance, const DekiNodeMeta& meta, const Deki::PropertyInfo& p,
                                                 const std::string& editKey, uint32_t selfNodeId, const CommitFn& commit)
 {
+    const DekiEditor::Localization::ScopedPackage packageText(meta.package);
     auto& ui = EditorUI::Get();
     void* field = static_cast<char*>(instance) + p.offset;
     // The label the component inspector would use (displayName if set, else

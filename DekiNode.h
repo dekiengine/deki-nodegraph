@@ -70,6 +70,9 @@ struct DekiNodeMeta
     const char* description = nullptr;       // one line on what the node does
                                              // (kStaticNodeDescription), shown under the
                                              // name in the add picker
+    const char* package = nullptr;           // the package the node is in ("deki-fsm"):
+                                             // its names show with that package's
+                                             // translations first
 };
 
 // ---------------------------------------------------------------------------
