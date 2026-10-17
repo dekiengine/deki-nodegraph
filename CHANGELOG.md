@@ -11,6 +11,11 @@ alongside one that has them.
 ## Unreleased
 
 ### Added
+- `DekiNodeMeta::package`: the package a node type is in. The node graph window
+  shows each node's names with that package's translations first. The
+  reflection codegen of the next engine release writes this field, so that
+  engine needs this version of deki-nodegraph and the other way round:
+  release them together.
 - Japanese: `editor/lang/ja.json` translates the names, tooltips and enum
   values this package's components show in the Inspector.
 - The package's editor text goes through the editor's translation (`Tr`), so
