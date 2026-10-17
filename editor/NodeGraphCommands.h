@@ -12,12 +12,14 @@
 // ModifyValueCommand (merging a drag into one step).
 
 #include <deki-editor/Command.h>
+#include <deki-editor/Localization.h>
 #include "deki-nodegraph/editor/NodeGraphDocument.h"
 #include "deki-nodegraph/editor/NodePropertyJson.h"
 
 #include "deki-nodegraph/DekiNode.h"
 #include <deki/LogSystem.h>
 
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <utility>
@@ -39,6 +41,14 @@ inline std::shared_ptr<NodeGraphDocument> Lock(const std::weak_ptr<NodeGraphDocu
         DEKI_LOG_ERROR("NodeGraphCommands: %s skipped — node graph document no longer open", what);
     }
     return locked;
+}
+
+/// A command's description from a translated format with one name in it.
+inline std::string Describe(const char* format, const std::string& name)
+{
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), format, name.c_str());
+    return buf;
 }
 }  // namespace NodeGraphCommandDetail
 
@@ -63,7 +73,10 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Add " + m_TypeName + " node"; }
+    std::string GetDescription() const override
+    {
+        return NodeGraphCommandDetail::Describe(Tr("Add %s node"), m_TypeName);
+    }
 
     void Execute() override
     {
@@ -132,7 +145,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Delete node"; }
+    std::string GetDescription() const override { return Tr("Delete node"); }
 
     void Execute() override
     {
@@ -193,7 +206,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Move node"; }
+    std::string GetDescription() const override { return Tr("Move node"); }
 
     void Execute() override
     {
@@ -236,7 +249,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Connect nodes"; }
+    std::string GetDescription() const override { return Tr("Connect nodes"); }
 
     void Execute() override
     {
@@ -280,7 +293,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Disconnect nodes"; }
+    std::string GetDescription() const override { return Tr("Disconnect nodes"); }
 
     void Execute() override
     {
@@ -324,7 +337,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Edit " + m_Property; }
+    std::string GetDescription() const override { return NodeGraphCommandDetail::Describe(Tr("Edit %s"), m_Property); }
 
     void Execute() override { Apply(m_New, "SetNodeProperty"); }
     void Undo() override { Apply(m_Old, "SetNodeProperty undo"); }
@@ -376,7 +389,7 @@ public:
 
     std::string GetDescription() const override
     {
-        return m_New.size() > m_Old.size() ? "Add output pin" : "Remove output pin";
+        return m_New.size() > m_Old.size() ? Tr("Add output pin") : Tr("Remove output pin");
     }
 
     void Execute() override
@@ -471,7 +484,7 @@ public:
 
     std::string GetDescription() const override
     {
-        return m_New.size() > m_Old.size() ? "Add output pin" : "Remove output pin";
+        return m_New.size() > m_Old.size() ? Tr("Add output pin") : Tr("Remove output pin");
     }
 
     void Execute() override
@@ -561,7 +574,10 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Remove " + m_Label; }
+    std::string GetDescription() const override
+    {
+        return NodeGraphCommandDetail::Describe(Tr("Remove %s"), Tr(m_Label.c_str()));
+    }
 
     void Execute() override
     {
@@ -689,7 +705,10 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Add " + m_ChildTypeName; }
+    std::string GetDescription() const override
+    {
+        return NodeGraphCommandDetail::Describe(Tr("Add %s"), m_ChildTypeName);
+    }
 
     void Execute() override
     {
@@ -737,7 +756,10 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Remove " + m_TypeName; }
+    std::string GetDescription() const override
+    {
+        return NodeGraphCommandDetail::Describe(Tr("Remove %s"), m_TypeName);
+    }
 
     void Execute() override
     {
@@ -789,7 +811,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Reorder"; }
+    std::string GetDescription() const override { return Tr("Reorder"); }
 
     void Execute() override
     {
@@ -827,7 +849,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return m_Enabled ? "Enable action" : "Disable action"; }
+    std::string GetDescription() const override { return m_Enabled ? Tr("Enable action") : Tr("Disable action"); }
 
     void Execute() override
     {
@@ -869,7 +891,7 @@ public:
     {
     }
 
-    std::string GetDescription() const override { return "Edit " + m_Property; }
+    std::string GetDescription() const override { return NodeGraphCommandDetail::Describe(Tr("Edit %s"), m_Property); }
 
     void Execute() override { Apply(m_New, "SetChildProperty"); }
     void Undo() override { Apply(m_Old, "SetChildProperty undo"); }
