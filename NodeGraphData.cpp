@@ -5,6 +5,7 @@
 #include <deki/SceneMessagePack.h>
 #include <deki/LogSystem.h>
 
+#include <memory>
 #include <string>
 
 namespace DekiNodeGraph
@@ -193,7 +194,7 @@ bool ParseNode(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Grap
                 DestroyPartialNode(node);
                 return false;
             }
-            node.id = (uint32_t)id;
+            node.id = static_cast<uint32_t>(id);
         }
         else if (key == "children")
         {
@@ -330,7 +331,7 @@ bool ParseLink(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Link
         }
         if (key == "from")
         {
-            out.fromNode = (uint32_t)v;
+            out.fromNode = static_cast<uint32_t>(v);
         }
         else if (key == "fromPin")
         {
@@ -338,7 +339,7 @@ bool ParseLink(SceneMsgPackParser& parser, uint32_t mapSize, NodeGraphData::Link
         }
         else if (key == "to")
         {
-            out.toNode = (uint32_t)v;
+            out.toNode = static_cast<uint32_t>(v);
         }
         else if (key == "toPin")
         {
@@ -450,13 +451,12 @@ NodeGraphData* NodeGraphData::LoadFromMemory(const uint8_t* data, size_t size)
         return nullptr;
     }
 
-    NodeGraphData* graph = new NodeGraphData();
+    std::unique_ptr<NodeGraphData> graph(new NodeGraphData());
     if (!ParseGraph(parser, rootSize, graph->m_Root))
     {
-        delete graph;  // destroys the instances created so far
         return nullptr;
     }
-    return graph;
+    return graph.release();
 }
 
 NodeGraphData::~NodeGraphData()
