@@ -26,11 +26,10 @@ var NAVTREE =
 [
   [ "deki-nodegraph", "index.html", [
     [ "変更履歴", "index.html#changelog", [
-      [ "0.22.0", "index.html#autotoc_md0", null ],
+      [ "0.40.0", "index.html#autotoc_md0", null ],
       [ "Changed", "index.html#autotoc_md1", null ],
-      [ "0.19.0", "index.html#autotoc_md2", null ],
-      [ "Changed", "index.html#autotoc_md3", null ],
-      [ "Added", "index.html#autotoc_md4", null ]
+      [ "0.22.0", "index.html#autotoc_md2", null ],
+      [ "Changed", "index.html#autotoc_md3", null ]
     ] ]
   ] ]
 ];
